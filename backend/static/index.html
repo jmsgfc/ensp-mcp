@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eNSP-MCP 设备当前配置看板</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23256fe6'/%3E%3Cpath d='M11 9l8 7-8 7' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <style>
+        :root {
+            --bg: #f6f9fd;
+            --panel: rgba(255, 255, 255, 0.86);
+            --panel-solid: #ffffff;
+            --line: #dfe7f2;
+            --line-strong: #cbd8e8;
+            --text: #1d2a3d;
+            --muted: #6c7b91;
+            --blue: #256fe6;
+            --blue-soft: #e8f1ff;
+            --green: #15b980;
+            --green-soft: #e9fbf2;
+            --red: #ef665c;
+            --red-soft: #fff0ef;
+            --amber: #d99a1b;
+            --shadow: 0 18px 45px rgba(49, 78, 116, 0.12);
+            --radius: 8px;
+            --font-sans: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif;
+            --font-mono: "Cascadia Code", "Consolas", monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            min-height: 100%;
+            margin: 0;
+            color: var(--text);
+            font-family: var(--font-sans);
+            background:
+                linear-gradient(120deg, rgba(37, 111, 230, 0.06), transparent 36%),
+                radial-gradient(circle at 82% 12%, rgba(21, 185, 128, 0.08), transparent 28%),
+                var(--bg);
+        }
+
+        body {
+            border: 1px solid #aebbd0;
+            border-radius: 8px;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        .page {
+            min-height: 100vh;
+            padding: 14px 38px 28px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            margin-bottom: 16px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px;
+            color: #0b61d8;
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .brand-icon {
+            display: grid;
+            width: 16px;
+            height: 16px;
+            place-items: center;
+            color: white;
+            background: linear-gradient(135deg, #5aa5ff, #1d70f0);
+            border-radius: 4px;
+            font-size: 11px;
+            line-height: 1;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 34px;
+            line-height: 1.08;
+            letter-spacing: 0;
+        }
+
+        .subtitle {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 16px;
+        }
+
+        .top-actions {
+            display: grid;
+            justify-items: end;
+            gap: 18px;
+            min-width: 220px;
+        }
+
+        .refresh-btn,
+        .copy-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            min-height: 40px;
+            border: 1px solid #2d7bf0;
+            border-radius: 8px;
+            color: #1262d8;
+            background: #fff;
+            font-weight: 700;
+            box-shadow: 0 8px 20px rgba(37, 111, 230, 0.08);
+        }
+
+        .refresh-btn {
+            min-width: 146px;
+            padding: 0 18px;
+        }
+
+        .refresh-btn:disabled {
+            cursor: wait;
+            opacity: 0.68;
+        }
+
+        .copy-btn {
+            min-height: 34px;
+            padding: 0 12px;
+            font-size: 13px;
+            background: var(--blue-soft);
+        }
+
+        .last-updated {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 360px minmax(0, 1fr);
+            gap: 28px;
+            align-items: start;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(18px);
+        }
+
+        .sidebar {
+            padding: 16px;
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .panel-title {
+            margin: 0;
+            font-size: 17px;
+            font-weight: 800;
+        }
+
+        .count-pill {
+            min-width: 44px;
+            padding: 7px 10px;
+            border-radius: 999px;
+            color: var(--muted);
+            text-align: center;
+            background: #eef3fa;
+            font-weight: 700;
+            font-size: 13px;
+        }
+
+        .search-wrap {
+            position: relative;
+            margin-bottom: 14px;
+        }
+
+        .search-wrap input {
+            width: 100%;
+            height: 40px;
+            padding: 0 14px 0 42px;
+            border: 1px solid var(--line-strong);
+            border-radius: 8px;
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.9);
+            outline: none;
+        }
+
+        .search-wrap input:focus {
+            border-color: #2d7bf0;
+            box-shadow: 0 0 0 3px rgba(45, 123, 240, 0.12);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            width: 16px;
+            height: 16px;
+            transform: translateY(-50%);
+            color: #6f819b;
+        }
+
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            margin-bottom: 14px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #f8fbff;
+        }
+
+        .filter-btn {
+            height: 34px;
+            border: 0;
+            color: #3f4e63;
+            background: transparent;
+            font-weight: 700;
+        }
+
+        .filter-btn.active {
+            color: #0b61d8;
+            background: linear-gradient(180deg, #e8f1ff, #dceaff);
+        }
+
+        .device-list {
+            display: grid;
+            gap: 10px;
+            max-height: calc(100vh - 330px);
+            overflow: auto;
+            padding-right: 2px;
+        }
+
+        .device-card {
+            display: grid;
+            grid-template-columns: 52px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            min-height: 82px;
+            padding: 10px 14px;
+            border: 1px solid var(--line);
+            border-left: 3px solid #35d5a3;
+            border-radius: 8px;
+            color: var(--text);
+            text-align: left;
+            background: rgba(255, 255, 255, 0.78);
+        }
+
+        .device-card:hover {
+            border-color: #8fbaff;
+            background: #fff;
+        }
+
+        .device-card.active {
+            border-color: #2d7bf0;
+            border-left-color: #2d7bf0;
+            box-shadow: 0 8px 26px rgba(45, 123, 240, 0.12);
+        }
+
+        .avatar {
+            display: grid;
+            width: 50px;
+            height: 50px;
+            place-items: center;
+            border-radius: 50%;
+            color: #1b2a3d;
+            background: #dff8df;
+            font-weight: 900;
+        }
+
+        .avatar.router {
+            background: #dcecff;
+        }
+
+        .device-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 16px;
+            font-weight: 900;
+        }
+
+        .device-model {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .online-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 6px;
+            color: #50627a;
+            font-size: 13px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+        }
+
+        .dot.offline {
+            background: #7e8b9c;
+        }
+
+        .type-badge {
+            align-self: start;
+            margin-top: 12px;
+            padding: 6px 9px;
+            border-radius: 8px;
+            color: #0b61d8;
+            background: #e7f0ff;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .hint {
+            display: grid;
+            grid-template-columns: 22px minmax(0, 1fr);
+            gap: 10px;
+            margin-top: 18px;
+            padding: 14px;
+            border: 1px solid #bcd8ff;
+            border-radius: 8px;
+            color: #52647c;
+            background: #eef6ff;
+            font-size: 13px;
+            line-height: 1.55;
+        }
+
+        .content {
+            display: grid;
+            gap: 16px;
+        }
+
+        .stage {
+            padding: 14px;
+        }
+
+        .stage-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .status-light {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 0 5px rgba(21, 185, 128, 0.12);
+        }
+
+        .stage-title h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .stat-card {
+            display: grid;
+            grid-template-columns: 32px minmax(0, 1fr);
+            align-items: center;
+            gap: 10px;
+            min-height: 64px;
+            padding: 10px 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.78);
+            box-shadow: 0 8px 22px rgba(44, 69, 101, 0.06);
+        }
+
+        .stat-icon {
+            display: grid;
+            width: 28px;
+            height: 28px;
+            place-items: center;
+            border-radius: 50%;
+            color: var(--blue);
+            background: var(--blue-soft);
+        }
+
+        .stat-card.add .stat-icon {
+            color: var(--green);
+            background: var(--green-soft);
+        }
+
+        .stat-card.remove .stat-icon {
+            color: var(--red);
+            background: var(--red-soft);
+        }
+
+        .stat-label {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .stat-value {
+            margin-top: 2px;
+            font-size: 16px;
+            font-weight: 900;
+        }
+
+        .snapshot-panel {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.72);
+        }
+
+        .snapshot-head,
+        .compare-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 17px;
+            font-weight: 900;
+        }
+
+        .snapshot-body {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 294px;
+            gap: 10px;
+            padding: 0 12px 14px;
+        }
+
+        .code-box {
+            min-height: 310px;
+            max-height: 430px;
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fbfdff;
+        }
+
+        .code-line {
+            display: grid;
+            grid-template-columns: 48px minmax(0, 1fr);
+            min-height: 24px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.75;
+        }
+
+        .line-number {
+            padding-right: 14px;
+            color: #8190a5;
+            text-align: right;
+            user-select: none;
+        }
+
+        .line-code {
+            padding-right: 16px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .code-footer {
+            padding: 10px 12px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .overview {
+            padding: 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .overview h3 {
+            margin: 0 0 20px;
+            font-size: 17px;
+        }
+
+        .overview-list {
+            display: grid;
+            gap: 18px;
+        }
+
+        .overview-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--muted);
+        }
+
+        .overview-item strong {
+            color: #34465e;
+        }
+
+        .compare-panel {
+            border: 1px solid #a9cdfd;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.72);
+        }
+
+        .compare-subtitle {
+            margin-left: 12px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .detail-link {
+            border: 0;
+            color: #1262d8;
+            background: transparent;
+            font-weight: 800;
+        }
+
+        .compare-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            margin: 0 12px 12px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .compare-stat {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            min-height: 74px;
+            border-right: 1px solid var(--line);
+        }
+
+        .compare-stat:last-child {
+            border-right: 0;
+        }
+
+        .compare-stat b {
+            display: block;
+            margin-top: 4px;
+            color: var(--blue);
+            font-size: 20px;
+        }
+
+        .compare-stat.add b {
+            color: var(--green);
+        }
+
+        .compare-stat.remove b {
+            color: var(--red);
+        }
+
+        .diff-drawer {
+            display: none;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            padding: 0 12px 12px;
+        }
+
+        .diff-drawer.open {
+            display: grid;
+        }
+
+        .diff-card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .diff-card h4 {
+            margin: 0;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--line);
+            font-size: 14px;
+        }
+
+        .diff-list {
+            display: grid;
+            gap: 8px;
+            max-height: 180px;
+            overflow: auto;
+            padding: 10px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }
+
+        .diff-empty,
+        .diff-line {
+            padding: 8px 10px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .diff-empty {
+            color: var(--muted);
+            background: #f6f9fd;
+        }
+
+        .diff-line.added {
+            color: #08704d;
+            background: var(--green-soft);
+        }
+
+        .diff-line.removed {
+            color: #b53c35;
+            background: var(--red-soft);
+        }
+
+        .empty {
+            display: grid;
+            min-height: 280px;
+            place-items: center;
+            color: var(--muted);
+            text-align: center;
+        }
+
+
+
+        .view-tabs {
+            display: inline-flex;
+            gap: 4px;
+            padding: 4px;
+            margin-bottom: 12px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.78);
+        }
+
+        .view-tab {
+            min-width: 104px;
+            height: 34px;
+            border: 0;
+            border-radius: 6px;
+            color: #50627a;
+            background: transparent;
+            font-weight: 800;
+        }
+
+        .view-tab.active {
+            color: #0b61d8;
+            background: var(--blue-soft);
+        }
+
+        .view-panel[hidden] {
+            display: none;
+        }
+
+        .topology-panel {
+            padding: 14px;
+        }
+
+        .topology-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .topology-head h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .topology-meta {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .topology-body {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 300px;
+            gap: 12px;
+        }
+
+        .topology-canvas {
+            position: relative;
+            min-height: 610px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background:
+                linear-gradient(#eef4fb 1px, transparent 1px),
+                linear-gradient(90deg, #eef4fb 1px, transparent 1px),
+                #fbfdff;
+            background-size: 32px 32px;
+        }
+
+        .topology-svg {
+            display: block;
+            width: 100%;
+            height: 610px;
+        }
+
+        .topology-link {
+            stroke: #98abc5;
+            stroke-width: 2.4;
+            vector-effect: non-scaling-stroke;
+        }
+
+        .topology-link.active {
+            stroke: #256fe6;
+            stroke-width: 3.2;
+        }
+
+        .topology-link-label {
+            fill: #475a73;
+            font-size: 11px;
+            font-weight: 700;
+            dominant-baseline: middle;
+            text-anchor: middle;
+            pointer-events: none;
+        }
+
+        .topology-link-label-bg {
+            fill: rgba(251, 253, 255, 0.94);
+            stroke: #d7e3f2;
+            stroke-width: 1;
+            rx: 5;
+            filter: drop-shadow(0 4px 10px rgba(42, 72, 108, 0.08));
+            pointer-events: none;
+        }
+
+        .topology-node {
+            cursor: pointer;
+        }
+
+        .topology-node circle,
+        .topology-node rect {
+            stroke: #ffffff;
+            stroke-width: 4;
+            filter: drop-shadow(0 8px 16px rgba(42, 72, 108, 0.16));
+        }
+
+        .topology-node.router circle {
+            fill: #dcecff;
+        }
+
+        .topology-node.switch rect {
+            fill: #daf8df;
+        }
+
+        .topology-node.pc rect {
+            fill: #e8edf5;
+        }
+
+        .topology-node.active circle,
+        .topology-node.active rect {
+            stroke: #256fe6;
+            stroke-width: 5;
+        }
+
+        .topology-node-label {
+            fill: #18263a;
+            font-size: 13px;
+            font-weight: 900;
+            text-anchor: middle;
+        }
+
+        .topology-side {
+            display: grid;
+            align-content: start;
+            gap: 12px;
+            padding: 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        .topology-side h3 {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .topology-detail-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .topology-detail-row strong {
+            color: var(--text);
+            text-align: right;
+        }
+
+        .topology-links {
+            display: grid;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .topology-link-card {
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: #3e5068;
+            background: #f8fbff;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .topology-empty {
+            display: grid;
+            height: 100%;
+            min-height: 360px;
+            place-items: center;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .topology-node-key {
+            fill: #1d2a3d;
+            font-size: 13px;
+            font-weight: 900;
+            text-anchor: middle;
+        }
+
+        .topology-link-hit {
+            stroke: transparent;
+            stroke-width: 16;
+            cursor: pointer;
+        }
+
+        .topology-side-empty {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .topology-link-card.active {
+            border-color: #2d7bf0;
+            background: var(--blue-soft);
+        }
+
+        .topology-link-card b {
+            display: block;
+            margin-bottom: 3px;
+            color: var(--text);
+        }
+        @media (max-width: 1180px) {
+            .layout,
+            .snapshot-body {
+                grid-template-columns: 1fr;
+            }
+
+            .topology-body {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .device-list {
+                max-height: none;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .page {
+                padding: 20px;
+            }
+
+            .topbar {
+                display: grid;
+            }
+
+            .top-actions {
+                justify-items: stretch;
+            }
+
+            h1 {
+                font-size: 30px;
+            }
+
+            .stat-grid,
+            .compare-grid,
+            .diff-drawer {
+                grid-template-columns: 1fr;
+            }
+
+            .topology-canvas {
+                min-height: 430px;
+            }
+
+            .topology-svg {
+                height: 430px;
+            }
+
+            .compare-stat {
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .compare-stat:last-child {
+                border-bottom: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <header class="topbar">
+            <div>
+                <div class="brand"><span class="brand-icon">›</span> ENSP-MCP / LIVE CONFIG BOARD</div>
+                <h1>设备当前配置看板</h1>
+                <p class="subtitle">实时查看网络设备当前配置与状态</p>
+            </div>
+            <div class="top-actions">
+                <button id="refreshBtn" class="refresh-btn" type="button">↻ 刷新配置</button>
+                <div class="last-updated">最后更新：<span id="lastUpdated">-</span></div>
+            </div>
+        </header>
+
+        <div class="layout">
+            <aside class="sidebar panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">设备列表</h2>
+                    <span id="deviceCount" class="count-pill">0 台</span>
+                </div>
+                <div class="search-wrap">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"></circle>
+                        <path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                    </svg>
+                    <input id="searchInput" type="search" placeholder="搜索设备">
+                </div>
+                <div class="filters">
+                    <button class="filter-btn active" data-filter="all" type="button">全部</button>
+                    <button class="filter-btn" data-filter="online" type="button">在线 <span id="onlineCount">0</span></button>
+                    <button class="filter-btn" data-filter="offline" type="button">离线 <span id="offlineCount">0</span></button>
+                </div>
+                <div id="deviceList" class="device-list"></div>
+            </aside>
+
+            <main class="content">
+                <div class="view-tabs" role="tablist" aria-label="视图切换">
+                    <button class="view-tab active" data-view="config" type="button">配置视图</button>
+                    <button class="view-tab" data-view="topology" type="button">拓扑视图</button>
+                </div>
+
+                <section class="stage panel view-panel config-view">
+                    <div class="stage-title">
+                        <span class="status-light"></span>
+                        <h2><span id="stageDevice">请选择设备</span> 当前配置</h2>
+                    </div>
+
+                    <div class="stat-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">♙</div>
+                            <div><div class="stat-label">设备类型</div><div id="metaType" class="stat-value">-</div></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">☷</div>
+                            <div><div class="stat-label">配置行数</div><div class="stat-value"><span id="metaLines">0</span> 行</div></div>
+                        </div>
+                        <div class="stat-card add">
+                            <div class="stat-icon">＋</div>
+                            <div><div class="stat-label">新增</div><div class="stat-value"><span id="metaAdded">0</span> 行</div></div>
+                        </div>
+                        <div class="stat-card remove">
+                            <div class="stat-icon">−</div>
+                            <div><div class="stat-label">移除</div><div class="stat-value"><span id="metaRemoved">0</span> 行</div></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">◔</div>
+                            <div><div class="stat-label">更新时间</div><div id="metaFetchedAt" class="stat-value" style="font-size:15px;">-</div></div>
+                        </div>
+                    </div>
+
+                    <div class="snapshot-panel">
+                        <div class="snapshot-head">
+                            <div class="section-title">▣ 当前配置快照</div>
+                            <button id="copyBtn" class="copy-btn" type="button">□ 复制配置</button>
+                        </div>
+                        <div class="snapshot-body">
+                            <div>
+                                <div id="configViewer" class="code-box">
+                                    <div class="empty">还没有配置快照。</div>
+                                </div>
+                                <div id="codeFooter" class="code-footer">共 0 行配置</div>
+                            </div>
+                            <aside class="overview">
+                                <h3>配置概览</h3>
+                                <div class="overview-list">
+                                    <div class="overview-item"><span>接口数量</span><strong><span id="overviewInterfaces">0</span> 个</strong></div>
+                                    <div class="overview-item"><span>VLAN 数量</span><strong><span id="overviewVlans">0</span> 个</strong></div>
+                                    <div class="overview-item"><span>路由条目</span><strong><span id="overviewRoutes">0</span> 条</strong></div>
+                                    <div class="overview-item"><span>ACL 规则</span><strong><span id="overviewAcl">0</span> 条</strong></div>
+                                    <div class="overview-item"><span>生成时间</span><strong id="overviewTime">-</strong></div>
+                                </div>
+                            </aside>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="compare-panel view-panel config-view">
+                    <div class="compare-head">
+                        <div class="section-title">⚖ 配置变更对比 <span class="compare-subtitle">当前版本与上一次快照的对比</span></div>
+                        <button id="toggleDiffBtn" class="detail-link" type="button">查看详情 →</button>
+                    </div>
+                    <div class="compare-grid">
+                        <div class="compare-stat add"><span class="stat-icon">＋</span><span>新增行数<b id="compareAdded">0</b></span></div>
+                        <div class="compare-stat remove"><span class="stat-icon">−</span><span>移除行数<b id="compareRemoved">0</b></span></div>
+                        <div class="compare-stat"><span class="stat-icon">▤</span><span>总配置行数<b id="compareTotal">0</b></span></div>
+                    </div>
+                    <div id="diffDrawer" class="diff-drawer">
+                        <div class="diff-card">
+                            <h4>新增内容</h4>
+                            <div id="addedList" class="diff-list"><div class="diff-empty">当前还没有新增内容。</div></div>
+                        </div>
+                        <div class="diff-card">
+                            <h4>移除内容</h4>
+                            <div id="removedList" class="diff-list"><div class="diff-empty">当前还没有移除内容。</div></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="topologyView" class="topology-panel panel view-panel" hidden>
+                    <div class="topology-head">
+                        <div>
+                            <h2>拓扑视图</h2>
+                            <div id="topologyMeta" class="topology-meta">正在加载拓扑...</div>
+                        </div>
+                        <button id="fitTopoBtn" class="copy-btn" type="button">适配画布</button>
+                    </div>
+                    <div class="topology-body">
+                        <div id="topologyCanvas" class="topology-canvas">
+                            <svg id="topologySvg" class="topology-svg" role="img" aria-label="网络拓扑图"></svg>
+                        </div>
+                        <aside id="topologyDetail" class="topology-side">
+                            <h3>拓扑详情</h3>
+                            <div class="topology-detail-row"><span>名称</span><strong>-</strong></div>
+                            <div class="topology-detail-row"><span>类型</span><strong>-</strong></div>
+                            <div class="topology-detail-row"><span>型号</span><strong>-</strong></div>
+                            <div class="topology-detail-row"><span>连接数</span><strong>-</strong></div>
+                        </aside>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            devices: [],
+            selectedId: null,
+            filter: "all",
+            query: "",
+            snapshots: {},
+            refreshing: false,
+            activeView: "config",
+            topology: null,
+            topologySelectedId: null,
+            selectedLinkId: null,
+        };
+
+        const refs = {
+            deviceCount: document.getElementById("deviceCount"),
+            onlineCount: document.getElementById("onlineCount"),
+            offlineCount: document.getElementById("offlineCount"),
+            deviceList: document.getElementById("deviceList"),
+            searchInput: document.getElementById("searchInput"),
+            refreshBtn: document.getElementById("refreshBtn"),
+            copyBtn: document.getElementById("copyBtn"),
+            toggleDiffBtn: document.getElementById("toggleDiffBtn"),
+            diffDrawer: document.getElementById("diffDrawer"),
+            lastUpdated: document.getElementById("lastUpdated"),
+            stageDevice: document.getElementById("stageDevice"),
+            metaType: document.getElementById("metaType"),
+            metaLines: document.getElementById("metaLines"),
+            metaAdded: document.getElementById("metaAdded"),
+            metaRemoved: document.getElementById("metaRemoved"),
+            metaFetchedAt: document.getElementById("metaFetchedAt"),
+            configViewer: document.getElementById("configViewer"),
+            codeFooter: document.getElementById("codeFooter"),
+            overviewInterfaces: document.getElementById("overviewInterfaces"),
+            overviewVlans: document.getElementById("overviewVlans"),
+            overviewRoutes: document.getElementById("overviewRoutes"),
+            overviewAcl: document.getElementById("overviewAcl"),
+            overviewTime: document.getElementById("overviewTime"),
+            compareAdded: document.getElementById("compareAdded"),
+            compareRemoved: document.getElementById("compareRemoved"),
+            compareTotal: document.getElementById("compareTotal"),
+            addedList: document.getElementById("addedList"),
+            removedList: document.getElementById("removedList"),
+            viewTabs: document.querySelectorAll(".view-tab"),
+            configPanels: document.querySelectorAll(".config-view"),
+            topologyView: document.getElementById("topologyView"),
+            topologySvg: document.getElementById("topologySvg"),
+            topologyMeta: document.getElementById("topologyMeta"),
+            topologyDetail: document.getElementById("topologyDetail"),
+            fitTopoBtn: document.getElementById("fitTopoBtn"),
+        };
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, function(char) {
+                return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char];
+            });
+        }
+
+        async function fetchJson(url) {
+            const response = await fetch(url, { cache: "no-store" });
+            if (!response.ok) {
+                throw new Error("HTTP " + response.status);
+            }
+            return response.json();
+        }
+
+        function normalizeDevices(payload) {
+            const list = Array.isArray(payload) ? payload : payload.value || payload.devices || [];
+            return list
+                .filter(device => device.type !== "pc")
+                .map(device => ({ ...device, online: Boolean(device.host && device.port && device.protocol) }))
+                .sort((a, b) => a.name.localeCompare(b.name, "zh-CN", { numeric: true }));
+        }
+
+        function currentDevice() {
+            return state.devices.find(device => device.id === state.selectedId) || null;
+        }
+
+        function graphDeviceById(id) {
+            return state.topology && Array.isArray(state.topology.devices)
+                ? state.topology.devices.find(device => device.id === id) || null
+                : null;
+        }
+
+        function graphLinksForDevice(id) {
+            if (!state.topology || !Array.isArray(state.topology.links)) return [];
+            return state.topology.links.filter(link => link.source === id || link.target === id);
+        }
+
+        function typeText(type) {
+            if (type === "router") return "路由器";
+            if (type === "switch") return "交换机";
+            if (type === "pc") return "PC";
+            return type || "-";
+        }
+
+        function shortInterfaceName(name) {
+            const value = String(name || "").trim();
+            return value
+                .replace(/^GigabitEthernet/i, "g")
+                .replace(/^Ethernet/i, "e");
+        }
+
+        function topologyLabelPosition(source, target, label, index) {
+            const midX = (source.px + target.px) / 2;
+            const midY = (source.py + target.py) / 2;
+            const dx = target.px - source.px;
+            const dy = target.py - source.py;
+            const length = Math.max(Math.hypot(dx, dy), 1);
+            let nx = -dy / length;
+            let ny = dx / length;
+
+            if (Math.abs(dy) < 18) {
+                nx = 0;
+                ny = -1;
+            } else if (Math.abs(dx) < 18) {
+                nx = 1;
+                ny = 0;
+            } else if (ny > 0) {
+                nx = -nx;
+                ny = -ny;
+            }
+
+            const stagger = (index % 3) * 5;
+            const offset = 17 + stagger;
+            const width = Math.max(58, label.length * 6.5 + 14);
+            const height = 20;
+            return {
+                x: midX + nx * offset,
+                y: midY + ny * offset,
+                width,
+                height,
+            };
+        }
+
+        function splitLines(config) {
+            if (!config) return [];
+            return String(config).replace(/\r\n/g, "\n").split("\n");
+        }
+
+        function formatConfigLine(line) {
+            const raw = String(line || "").replace(/\s+$/g, "").replace(/\t/g, "    ");
+            if (!raw.trim()) return "";
+            const indent = raw.match(/^\s*/)[0].length > 0 ? "  " : "";
+            return indent + raw.trim().replace(/ {6,}/g, " ");
+        }
+
+        function uniqueCount(pattern, config) {
+            const matches = String(config || "").match(pattern);
+            return matches ? new Set(matches.map(item => item.trim())).size : 0;
+        }
+
+        function calcOverview(config) {
+            const text = String(config || "");
+            return {
+                interfaces: uniqueCount(/^interface\s+\S+/gmi, text),
+                vlans: uniqueCount(/\bvlan\s+(?:batch\s+)?[\d\s]+/gmi, text),
+                routes: uniqueCount(/^ip route-static\s+.+$/gmi, text),
+                acl: uniqueCount(/^rule\s+\d+\s+.+$/gmi, text),
+            };
+        }
+
+        function diffConfigs(previous, next) {
+            if (!previous) return { added: [], removed: [] };
+            const oldLines = splitLines(previous).filter(Boolean);
+            const newLines = splitLines(next).filter(Boolean);
+            const oldCounts = new Map();
+            const newCounts = new Map();
+            oldLines.forEach(line => oldCounts.set(line, (oldCounts.get(line) || 0) + 1));
+            newLines.forEach(line => newCounts.set(line, (newCounts.get(line) || 0) + 1));
+            const added = [];
+            const removed = [];
+            for (const [line, count] of newCounts.entries()) {
+                const delta = count - (oldCounts.get(line) || 0);
+                for (let i = 0; i < delta; i += 1) added.push(line);
+            }
+            for (const [line, count] of oldCounts.entries()) {
+                const delta = count - (newCounts.get(line) || 0);
+                for (let i = 0; i < delta; i += 1) removed.push(line);
+            }
+            return { added, removed };
+        }
+
+        function formatTime(value) {
+            const date = value ? new Date(value) : new Date();
+            if (Number.isNaN(date.getTime())) return "-";
+            return date.toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "/");
+        }
+
+        function setBanner(kind, text) {
+            if (kind === "error") {
+                console.error(text);
+            }
+        }
+
+        function filteredDevices() {
+            return state.devices.filter(device => {
+                const queryHit = !state.query || (device.name + " " + device.model + " " + device.type).toLowerCase().includes(state.query);
+                const filterHit = state.filter === "all" || (state.filter === "online" ? device.online : !device.online);
+                return queryHit && filterHit;
+            });
+        }
+
+        function renderDeviceList() {
+            const online = state.devices.filter(device => device.online).length;
+            const offline = state.devices.length - online;
+            refs.deviceCount.textContent = state.devices.length + " 台";
+            refs.onlineCount.textContent = online;
+            refs.offlineCount.textContent = offline;
+
+            const devices = filteredDevices();
+            if (!devices.length) {
+                refs.deviceList.innerHTML = '<div class="empty" style="min-height:120px;">没有匹配的设备。</div>';
+                return;
+            }
+
+            refs.deviceList.innerHTML = devices.map(device => {
+                const active = device.id === state.selectedId ? " active" : "";
+                const kind = device.type === "router" ? "router" : "";
+                const label = device.type === "router" ? "ROUTER" : "SWITCH";
+                const shortName = device.type === "router" ? "AR" : "LSW";
+                return `
+                    <button class="device-card${active}" type="button" data-id="${escapeHtml(device.id)}">
+                        <span class="avatar ${kind}">${shortName}</span>
+                        <span>
+                            <span class="device-name">${escapeHtml(device.name)}</span>
+                            <span class="device-model">${escapeHtml(device.model || "-")}</span>
+                            <span class="online-row"><span class="dot ${device.online ? "" : "offline"}"></span>${device.online ? "在线" : "离线"}</span>
+                        </span>
+                        <span class="type-badge">${label}</span>
+                    </button>
+                `;
+            }).join("");
+
+            refs.deviceList.querySelectorAll(".device-card").forEach(card => {
+                card.addEventListener("click", () => selectDevice(card.dataset.id));
+            });
+        }
+
+        function renderCode(config) {
+            const lines = splitLines(config);
+            if (!lines.length) {
+                refs.configViewer.innerHTML = '<div class="empty">当前没有可显示的配置。</div>';
+                refs.codeFooter.textContent = "共 0 行配置";
+                return;
+            }
+            refs.configViewer.innerHTML = lines.map((line, index) => `
+                <div class="code-line">
+                    <span class="line-number">${index + 1}</span>
+                    <span class="line-code">${escapeHtml(formatConfigLine(line) || " ")}</span>
+                </div>
+            `).join("");
+            refs.codeFooter.textContent = "共 " + lines.length + " 行配置";
+            refs.configViewer.scrollTop = 0;
+        }
+
+        function renderDiffList(container, lines, type, emptyText) {
+            container.innerHTML = lines.length
+                ? lines.slice(0, 60).map(line => '<div class="diff-line ' + type + '">' + escapeHtml(line) + "</div>").join("")
+                : '<div class="diff-empty">' + escapeHtml(emptyText) + "</div>";
+        }
+
+        function renderStage() {
+            const device = currentDevice();
+            const snapshot = device ? state.snapshots[device.id] : null;
+            refs.stageDevice.textContent = device ? device.name : "请选择设备";
+            refs.metaType.textContent = device ? typeText(device.type) : "-";
+
+            if (!snapshot) {
+                refs.metaLines.textContent = "0";
+                refs.metaAdded.textContent = "0";
+                refs.metaRemoved.textContent = "0";
+                refs.metaFetchedAt.textContent = "-";
+                refs.lastUpdated.textContent = "-";
+                refs.compareAdded.textContent = "0";
+                refs.compareRemoved.textContent = "0";
+                refs.compareTotal.textContent = "0";
+                refs.overviewInterfaces.textContent = "0";
+                refs.overviewVlans.textContent = "0";
+                refs.overviewRoutes.textContent = "0";
+                refs.overviewAcl.textContent = "0";
+                refs.overviewTime.textContent = "-";
+                renderCode("");
+                renderDiffList(refs.addedList, [], "added", "选择设备并刷新后开始记录变化。");
+                renderDiffList(refs.removedList, [], "removed", "选择设备并刷新后开始记录变化。");
+                setBanner("success", device ? "已选择 " + device.name + "，请刷新读取当前配置。" : "请选择一台设备读取当前配置。");
+                return;
+            }
+
+            const lines = splitLines(snapshot.config);
+            const overview = calcOverview(snapshot.config);
+            const fetched = formatTime(snapshot.fetched_at);
+            refs.metaLines.textContent = String(lines.length);
+            refs.metaAdded.textContent = String(snapshot.diff.added.length);
+            refs.metaRemoved.textContent = String(snapshot.diff.removed.length);
+            refs.metaFetchedAt.textContent = fetched;
+            refs.lastUpdated.textContent = fetched;
+            refs.compareAdded.textContent = String(snapshot.diff.added.length);
+            refs.compareRemoved.textContent = String(snapshot.diff.removed.length);
+            refs.compareTotal.textContent = String(lines.length);
+            refs.overviewInterfaces.textContent = String(overview.interfaces);
+            refs.overviewVlans.textContent = String(overview.vlans);
+            refs.overviewRoutes.textContent = String(overview.routes);
+            refs.overviewAcl.textContent = String(overview.acl);
+            refs.overviewTime.textContent = fetched;
+            renderCode(snapshot.config);
+            renderDiffList(refs.addedList, snapshot.diff.added, "added", "当前还没有新增内容。");
+            renderDiffList(refs.removedList, snapshot.diff.removed, "removed", "当前还没有移除内容。");
+            setBanner("success", device.name + " 配置快照已完成。");
+        }
+
+        function switchView(view) {
+            state.activeView = view;
+            refs.viewTabs.forEach(tab => tab.classList.toggle("active", tab.dataset.view === view));
+            refs.configPanels.forEach(panel => { panel.hidden = view !== "config"; });
+            refs.topologyView.hidden = view !== "topology";
+            if (view === "topology") {
+                if (!state.topology) {
+                    loadTopology();
+                } else {
+                    renderTopology();
+                }
+            }
+        }
+
+        async function loadTopology() {
+            refs.topologyMeta.textContent = "正在加载拓扑...";
+            try {
+                const payload = await fetchJson("/api/topology/graph");
+                state.topology = payload;
+                if (!state.topologySelectedId) {
+                    state.topologySelectedId = state.selectedId || (payload.devices[0] && payload.devices[0].id) || null;
+                }
+                renderTopology();
+            } catch (error) {
+                refs.topologyMeta.textContent = "拓扑加载失败：" + error.message;
+                refs.topologySvg.innerHTML = '<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" class="topology-empty">拓扑数据加载失败</div></foreignObject>';
+                renderTopologyDetail(null);
+            }
+        }
+
+        function normalizedGraph() {
+            const graph = state.topology || { devices: [], links: [] };
+            const devices = Array.isArray(graph.devices) ? graph.devices : [];
+            const links = Array.isArray(graph.links) ? graph.links : [];
+            if (!devices.length) return { devices: [], links, viewBox: "0 0 100 100" };
+
+            const xs = devices.map(device => Number(device.x) || 0);
+            const ys = devices.map(device => Number(device.y) || 0);
+            const minX = Math.min(...xs);
+            const minY = Math.min(...ys);
+            const maxX = Math.max(...xs);
+            const maxY = Math.max(...ys);
+            const padding = 120;
+            const width = Math.max(760, maxX - minX + padding * 2);
+            const height = Math.max(460, maxY - minY + padding * 2);
+
+            return {
+                links,
+                viewBox: `0 0 ${width} ${height}`,
+                devices: devices.map(device => ({
+                    ...device,
+                    px: (Number(device.x) || 0) - minX + padding,
+                    py: (Number(device.y) || 0) - minY + padding,
+                })),
+            };
+        }
+
+        function renderTopology() {
+            const graph = normalizedGraph();
+            const devicesById = new Map(graph.devices.map(device => [device.id, device]));
+            refs.topologyMeta.textContent = `${graph.devices.length} 台设备 · ${graph.links.length} 条连接`;
+
+            if (!graph.devices.length) {
+                refs.topologySvg.setAttribute("viewBox", "0 0 100 100");
+                refs.topologySvg.innerHTML = '<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" class="topology-empty">未找到拓扑设备</div></foreignObject>';
+                renderTopologyDetail(null);
+                return;
+            }
+
+            refs.topologySvg.setAttribute("viewBox", graph.viewBox);
+            const linkMarkup = graph.links.map((link, index) => {
+                const source = devicesById.get(link.source);
+                const target = devicesById.get(link.target);
+                if (!source || !target) return "";
+                const active = state.selectedLinkId === link.id || state.topologySelectedId === source.id || state.topologySelectedId === target.id;
+                const label = `${shortInterfaceName(link.source_interface)} ↔ ${shortInterfaceName(link.target_interface)}`;
+                const labelBox = topologyLabelPosition(source, target, label, index);
+                return `
+                    <g data-link-id="${escapeHtml(link.id)}">
+                        <line class="topology-link${active ? " active" : ""}" x1="${source.px}" y1="${source.py}" x2="${target.px}" y2="${target.py}"></line>
+                        <line class="topology-link-hit" x1="${source.px}" y1="${source.py}" x2="${target.px}" y2="${target.py}"></line>
+                        <g class="topology-link-label-wrap">
+                            <rect class="topology-link-label-bg" x="${labelBox.x - labelBox.width / 2}" y="${labelBox.y - labelBox.height / 2}" width="${labelBox.width}" height="${labelBox.height}" rx="5"></rect>
+                            <text class="topology-link-label" x="${labelBox.x}" y="${labelBox.y + 0.5}">${escapeHtml(label)}</text>
+                        </g>
+                    </g>
+                `;
+            }).join("");
+
+            const nodeMarkup = graph.devices.map(device => {
+                const active = device.id === state.topologySelectedId ? " active" : "";
+                const kind = device.type === "router" ? "router" : device.type === "pc" ? "pc" : "switch";
+                const key = device.type === "router" ? "AR" : device.type === "pc" ? "PC" : "LSW";
+                const shape = device.type === "router"
+                    ? `<circle cx="${device.px}" cy="${device.py}" r="28"></circle>`
+                    : `<rect x="${device.px - 30}" y="${device.py - 24}" width="60" height="48" rx="8"></rect>`;
+                return `
+                    <g class="topology-node ${kind}${active}" data-device-id="${escapeHtml(device.id)}">
+                        ${shape}
+                        <text class="topology-node-key" x="${device.px}" y="${device.py + 5}">${key}</text>
+                        <text class="topology-node-label" x="${device.px}" y="${device.py + 48}">${escapeHtml(device.name)}</text>
+                    </g>
+                `;
+            }).join("");
+
+            refs.topologySvg.innerHTML = linkMarkup + nodeMarkup;
+            refs.topologySvg.querySelectorAll("[data-device-id]").forEach(node => {
+                node.addEventListener("click", () => selectTopologyDevice(node.dataset.deviceId));
+            });
+            refs.topologySvg.querySelectorAll("[data-link-id]").forEach(node => {
+                node.addEventListener("click", event => {
+                    event.stopPropagation();
+                    state.selectedLinkId = node.dataset.linkId;
+                    const link = (state.topology.links || []).find(item => item.id === state.selectedLinkId);
+                    state.topologySelectedId = link ? link.source : state.topologySelectedId;
+                    renderTopology();
+                });
+            });
+            renderTopologyDetail(state.topologySelectedId);
+        }
+
+        function renderTopologyDetail(id) {
+            const device = graphDeviceById(id);
+            if (!device) {
+                refs.topologyDetail.innerHTML = '<h3>拓扑详情</h3><div class="topology-side-empty">请选择拓扑中的设备查看连接信息。</div>';
+                return;
+            }
+            const links = graphLinksForDevice(device.id);
+            const linkItems = links.map(link => {
+                const isSource = link.source === device.id;
+                const peerName = isSource ? link.target_name : link.source_name;
+                const localInterface = shortInterfaceName(isSource ? link.source_interface : link.target_interface);
+                const peerInterface = shortInterfaceName(isSource ? link.target_interface : link.source_interface);
+                const active = state.selectedLinkId === link.id ? " active" : "";
+                return `
+                    <button class="topology-link-card${active}" type="button" data-link-id="${escapeHtml(link.id)}">
+                        <b>${escapeHtml(device.name)} ↔ ${escapeHtml(peerName)}</b>
+                        ${escapeHtml(localInterface || "-")} ↔ ${escapeHtml(peerInterface || "-")}
+                    </button>
+                `;
+            }).join("");
+
+            refs.topologyDetail.innerHTML = `
+                <h3>${escapeHtml(device.name)}</h3>
+                <div class="topology-detail-row"><span>类型</span><strong>${escapeHtml(typeText(device.type))}</strong></div>
+                <div class="topology-detail-row"><span>状态</span><strong>${device.protocol ? "在线" : "无 Telnet"}</strong></div>
+                <div class="topology-detail-row"><span>连接数</span><strong>${links.length} 条</strong></div>
+                <div class="topology-links">${linkItems || '<div class="topology-side-empty">暂无连接。</div>'}</div>
+            `;
+            refs.topologyDetail.querySelectorAll("[data-link-id]").forEach(card => {
+                card.addEventListener("click", () => {
+                    state.selectedLinkId = card.dataset.linkId;
+                    renderTopology();
+                });
+            });
+        }
+
+        async function selectTopologyDevice(id) {
+            const graphDevice = graphDeviceById(id);
+            if (!graphDevice) return;
+            state.topologySelectedId = id;
+            state.selectedLinkId = null;
+            if (graphDevice.type !== "pc") {
+                state.selectedId = id;
+                renderDeviceList();
+                renderStage();
+                if (!state.snapshots[id]) {
+                    await refreshConfig(true);
+                }
+            }
+            renderTopology();
+        }
+
+        async function selectDevice(id) {
+            state.selectedId = id;
+            state.topologySelectedId = id;
+            state.selectedLinkId = null;
+            renderDeviceList();
+            renderStage();
+            if (state.topology) renderTopology();
+            if (!state.snapshots[id]) {
+                await refreshConfig(true);
+            }
+        }
+
+        async function refreshConfig(silent) {
+            const device = currentDevice();
+            if (!device || state.refreshing) return;
+            state.refreshing = true;
+            refs.refreshBtn.disabled = true;
+            refs.refreshBtn.textContent = "↻ 刷新中";
+            if (!silent) setBanner("success", "正在读取 " + device.name + " 的当前配置...");
+
+            try {
+                const payload = await fetchJson("/api/devices/" + encodeURIComponent(device.id) + "/current-config");
+                const previous = state.snapshots[device.id];
+                const config = payload.config || "";
+                state.snapshots[device.id] = {
+                    config,
+                    fetched_at: payload.fetched_at || new Date().toISOString(),
+                    diff: diffConfigs(previous ? previous.config : null, config),
+                };
+                renderStage();
+            } catch (error) {
+                setBanner("error", "读取配置失败：" + error.message);
+            } finally {
+                state.refreshing = false;
+                refs.refreshBtn.disabled = false;
+                refs.refreshBtn.textContent = "↻ 刷新配置";
+            }
+        }
+
+        async function loadDevices() {
+            try {
+                const payload = await fetchJson("/api/devices");
+                state.devices = normalizeDevices(payload);
+                state.selectedId = state.devices[0] ? state.devices[0].id : null;
+                state.topologySelectedId = state.selectedId;
+                renderDeviceList();
+                renderStage();
+                await loadTopology();
+                if (state.selectedId) await refreshConfig(true);
+            } catch (error) {
+                setBanner("error", "加载设备失败：" + error.message);
+            }
+        }
+
+        refs.refreshBtn.addEventListener("click", () => refreshConfig(false));
+        refs.copyBtn.addEventListener("click", async () => {
+            const device = currentDevice();
+            const snapshot = device ? state.snapshots[device.id] : null;
+            if (!snapshot) return;
+            await navigator.clipboard.writeText(snapshot.config);
+            setBanner("success", device.name + " 当前配置已复制。");
+        });
+        refs.toggleDiffBtn.addEventListener("click", () => {
+            refs.diffDrawer.classList.toggle("open");
+            refs.toggleDiffBtn.textContent = refs.diffDrawer.classList.contains("open") ? "收起详情 ↑" : "查看详情 →";
+        });
+        refs.searchInput.addEventListener("input", event => {
+            state.query = event.target.value.trim().toLowerCase();
+            renderDeviceList();
+        });
+        document.querySelectorAll(".filter-btn").forEach(button => {
+            button.addEventListener("click", () => {
+                state.filter = button.dataset.filter;
+                document.querySelectorAll(".filter-btn").forEach(item => item.classList.toggle("active", item === button));
+                renderDeviceList();
+            });
+        });
+        refs.viewTabs.forEach(tab => {
+            tab.addEventListener("click", () => switchView(tab.dataset.view));
+        });
+        refs.fitTopoBtn.addEventListener("click", () => renderTopology());
+
+        loadDevices();
+    </script>
+</body>
+</html>

@@ -1,0 +1,518 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eNSP-MCP 鑷劧璇█閰嶇疆鍔╂墜锛圡VP锛?/title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { font-size: 24px; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+        .input-section { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        textarea { width: 100%; height: 80px; border: 1px solid #ddd; border-radius: 6px; padding: 12px; font-size: 15px; resize: vertical; font-family: inherit; }
+        textarea:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
+        .examples { margin: 10px 0 16px; font-size: 13px; color: #888; }
+        .examples span { cursor: pointer; color: #4a90d9; margin-right: 12px; }
+        .examples span:hover { text-decoration: underline; }
+        button { background: #4a90d9; color: #fff; border: none; border-radius: 6px; padding: 10px 24px; font-size: 15px; cursor: pointer; }
+        button:hover { background: #3a7bc8; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .result-section { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: none; }
+        .result-section.show { display: block; }
+        .section-title { font-size: 14px; font-weight: 600; color: #555; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .section-title:first-child { margin-top: 0; }
+        .summary { font-size: 16px; color: #333; padding: 12px; background: #f0f7ff; border-radius: 6px; border-left: 3px solid #4a90d9; }
+        .meta { display: flex; gap: 16px; margin: 8px 0; font-size: 14px; flex-wrap: wrap; }
+        .meta-item { display: flex; align-items: center; gap: 6px; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .tag-intent { background: #e8f4fd; color: #2d7ab5; }
+        .tag-device { background: #f0f0f0; color: #555; }
+        .tag-ready { background: #e6f7e6; color: #2d8a2d; }
+        .tag-draft { background: #fff3e0; color: #b57a2d; }
+        .commands { background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 16px; font-family: "Cascadia Code", "Fira Code", monospace; font-size: 13px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; }
+        .cmd-device { color: #569cd6; font-weight: bold; }
+        .cmd-line { color: #d4d4d4; }
+        .warnings { padding: 12px; background: #fff8e1; border-radius: 6px; border-left: 3px solid #f5a623; font-size: 14px; }
+        .warnings li { margin: 4px 0 4px 16px; }
+        .next-action { padding: 12px; background: #e8f5e9; border-radius: 6px; font-size: 14px; color: #2e7d32; }
+        .error { padding: 12px; background: #ffebee; border-radius: 6px; color: #c62828; font-size: 14px; display: none; }
+        .error.show { display: block; }
+        .loading { color: #888; font-style: italic; }
+
+        /* 鎵ц寤鸿鍖哄煙 */
+        .execute-section { margin-top: 16px; padding: 16px; border-radius: 6px; border: 1px solid #e0e0e0; background: #fafafa; }
+        .execute-section.can-execute { border-color: #4a90d9; background: #f5f9ff; }
+        .execute-section.preview-only { border-color: #ccc; background: #f9f9f9; }
+        .execute-section.failed { border-color: #e57373; background: #fff5f5; }
+        .execute-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .execute-status { font-size: 14px; font-weight: 600; }
+        .execute-status.can { color: #2d7ab5; }
+        .execute-status.preview { color: #888; }
+        .execute-status.failed { color: #c62828; }
+        .btn-execute { background: #e65100; color: #fff; padding: 8px 20px; font-size: 14px; }
+        .btn-execute:hover { background: #bf360c; }
+        .execute-api { margin-top: 8px; font-size: 12px; color: #888; font-family: monospace; }
+
+        /* 纭瀵硅瘽妗?*/
+        .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
+        .overlay.show { display: flex; }
+        .dialog { background: #fff; border-radius: 10px; padding: 24px; max-width: 520px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+        .dialog h3 { font-size: 18px; margin-bottom: 12px; }
+        .dialog-warnings { padding: 10px; background: #fff8e1; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
+        .dialog-warnings li { margin: 3px 0 3px 16px; }
+        .dialog-note { font-size: 13px; color: #666; margin-bottom: 16px; }
+        .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .btn-cancel { background: #eee; color: #333; }
+        .btn-cancel:hover { background: #ddd; }
+        .btn-confirm { background: #e65100; color: #fff; }
+        .btn-confirm:hover { background: #bf360c; }
+
+        /* 鎵ц缁撴灉 */
+        .deploy-result { margin-top: 12px; padding: 14px; border-radius: 6px; font-size: 14px; display: none; }
+        .deploy-result.show { display: block; }
+        .deploy-result.success { background: #e8f5e9; border-left: 3px solid #4caf50; }
+        .deploy-result.failure { background: #ffebee; border-left: 3px solid #e53935; }
+        .deploy-result h4 { margin-bottom: 8px; }
+        .deploy-device { margin: 6px 0; padding: 6px 10px; background: rgba(0,0,0,0.03); border-radius: 4px; font-size: 13px; }
+        .deploy-device .dev-name { font-weight: 600; }
+        .deploy-verify { margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.03); border-radius: 4px; font-size: 13px; }
+
+        /* 娴佺▼璇存槑鍜?MCP 鏄犲皠 */
+        .info-section { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .info-section h2 { font-size: 16px; margin-bottom: 12px; color: #333; }
+        .flow-steps { counter-reset: step; list-style: none; padding: 0; }
+        .flow-steps li { counter-increment: step; position: relative; padding: 8px 0 8px 40px; font-size: 14px; color: #555; border-left: 2px solid #e0e0e0; margin-left: 12px; }
+        .flow-steps li:last-child { border-left: 2px solid transparent; }
+        .flow-steps li::before { content: counter(step); position: absolute; left: -13px; top: 6px; width: 24px; height: 24px; background: #4a90d9; color: #fff; border-radius: 50%; text-align: center; line-height: 24px; font-size: 12px; font-weight: 600; }
+        .flow-steps li strong { color: #333; }
+        .mcp-map { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .mcp-map th, .mcp-map td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; }
+        .mcp-map th { background: #f5f5f5; font-weight: 600; color: #555; }
+        .mcp-map td code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+        .state-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .state-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 12px; }
+        .state-tag .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .state-unsupported .dot { background: #bdbdbd; } .state-unsupported { background: #f5f5f5; color: #757575; }
+        .state-preview .dot { background: #ffa726; } .state-preview { background: #fff3e0; color: #e65100; }
+        .state-executable .dot { background: #42a5f5; } .state-executable { background: #e3f2fd; color: #1565c0; }
+        .state-success .dot { background: #66bb6a; } .state-success { background: #e8f5e9; color: #2e7d32; }
+        .state-failed .dot { background: #ef5350; } .state-failed { background: #ffebee; color: #c62828; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>eNSP-MCP 鑷劧璇█閰嶇疆鍔╂墜</h1>
+        <p class="subtitle">杈撳叆鑷劧璇█闇€姹傦紝鑷姩鐢熸垚閰嶇疆鑽夋骞舵敮鎸佸彈鎺ф墽琛屻€傚綋鍓?MVP 鏀寔锛?strong>PC 浜掗€?/strong>锛堥潤鎬佽矾鐢憋級鍜?<strong>DHCP 鍦板潃鍒嗛厤</strong>涓ょ被鍦烘櫙銆?/p>
+
+        <div class="info-section">
+            <h2>褰撳墠娴佺▼璇存槑</h2>
+            <ol class="flow-steps">
+                <li><strong>鑷劧璇█杈撳叆</strong> 鈥?鐢ㄦ埛鐢ㄤ腑鏂囨弿杩扮綉缁滈厤缃渶姹傦紙濡?璁?PC1 鍜?PC2 浜掗€?锛?/li>
+                <li><strong>鎰忓浘璇嗗埆</strong> 鈥?瑙勫垯寮曟搸鍖归厤鍏抽敭璇嶏紝璇嗗埆涓?PC 浜掗€?/ OSPF / VLAN / DHCP 鍥涚被鎰忓浘涔嬩竴</li>
+                <li><strong>鑽夋鐢熸垚</strong> 鈥?鏍规嵁鎰忓浘绫诲瀷璋冪敤瀵瑰簲鐨勯厤缃敓鎴愬櫒锛岃緭鍑鸿澶囧垪琛ㄥ拰鍏蜂綋鍛戒护</li>
+                <li><strong>鐢ㄦ埛纭</strong> 鈥?灞曠ず閰嶇疆鑽夋鍜岄闄╂彁绀猴紝鐢ㄦ埛瀹￠槄鍚庢樉寮忕‘璁?/li>
+                <li><strong>鍙楁帶鎵ц</strong> 鈥?閫氳繃鐧藉悕鍗曟牎楠?+ 瀹夊叏鍓嶇疆鏉′欢鍚庯紝閫愯澶囦笅鍙戦厤缃懡浠?/li>
+                <li><strong>缁撴灉楠岃瘉</strong> 鈥?鑷姩楠岃瘉閰嶇疆鏁堟灉锛堣繛閫氭€?ping / DHCP 鍦板潃鑾峰彇锛夛紝杩斿洖楠岃瘉鎶ュ憡</li>
+            </ol>
+        </div>
+
+        <div class="info-section">
+            <h2>MCP 瀵瑰簲鑳藉姏璇存槑</h2>
+            <table class="mcp-map">
+                <thead><tr><th>娴佺▼姝ラ</th><th>MCP 宸ュ叿</th><th>璇存槑</th></tr></thead>
+                <tbody>
+                    <tr><td>鎰忓浘璇嗗埆 + 鑽夋鐢熸垚</td><td><code>plan_nl_request</code></td><td>杈撳叆鑷劧璇█锛岃繑鍥炴剰鍥惧拰閰嶇疆鑽夋锛堝彧璇伙級</td></tr>
+                    <tr><td>涓€閿墽琛岋紙璇嗗埆+涓嬪彂锛?/td><td><code>execute_nl_request</code></td><td>MVP 鍙楁帶鍏ュ彛锛屼粎鏀寔 PC 浜掗€氬拰 DHCP</td></tr>
+                    <tr><td>棰勮闈欐€佽矾鐢辫崏妗?/td><td><code>preview_pc_connectivity_config</code></td><td>PC1/PC2 浜掗€氶厤缃瑙堬紙鍙锛?/td></tr>
+                    <tr><td>鎵ц闈欐€佽矾鐢变笅鍙?/td><td><code>apply_pc_connectivity_config</code></td><td>闇€ confirmed=true + ENABLE_REAL_ENSP=true</td></tr>
+                    <tr><td>棰勮 DHCP 鑽夋</td><td><code>preview_dhcp_config</code></td><td>DHCP 鍦板潃鍒嗗彂閰嶇疆棰勮锛堝彧璇伙級</td></tr>
+                    <tr><td>鎵ц DHCP 涓嬪彂</td><td><code>apply_dhcp_config</code></td><td>闇€ confirmed=true + ENABLE_REAL_ENSP=true</td></tr>
+                    <tr><td>PC 浜掗€氶獙璇?/td><td><code>get_final_report</code></td><td>杩為€氭€?+ 閮ㄧ讲鐘舵€?+ save/rollback 姹囨€?/td></tr>
+                    <tr><td>DHCP 楠岃瘉</td><td><code>get_dhcp_final_report</code></td><td>PC1/2/3/4 DHCP 鍦板潃鑾峰彇楠岃瘉</td></tr>
+                </tbody>
+            </table>
+            <div class="state-tags">
+                <span class="state-tag state-unsupported"><span class="dot"></span>涓嶆敮鎸?/span>
+                <span class="state-tag state-preview"><span class="dot"></span>浠呴瑙?/span>
+                <span class="state-tag state-executable"><span class="dot"></span>鍙墽琛?/span>
+                <span class="state-tag state-success"><span class="dot"></span>鎵ц鎴愬姛</span>
+                <span class="state-tag state-failed"><span class="dot"></span>鎵ц澶辫触</span>
+            </div>
+        </div>
+
+        <div class="input-section">
+            <textarea id="requestInput" placeholder="渚嬪锛氳 PC1 PC2 PC3 PC4 鑷姩鑾峰彇鍦板潃"></textarea>
+            <div class="examples">
+                璇曡瘯锛?                <span onclick="fill('璁?PC1 鍜?PC2 浜掗€?)">PC1/PC2 浜掗€?/span>
+                <span onclick="fill('璁?PC1 PC2 PC3 PC4 鑷姩鑾峰彇鍦板潃')">DHCP 鍦板潃鍒嗗彂</span>
+            </div>
+            <button id="submitBtn" onclick="analyze()">鍒嗘瀽闇€姹?/button>
+        </div>
+
+        <div id="errorBox" class="error"></div>
+
+        <div id="resultSection" class="result-section">
+            <div class="section-title">闇€姹傜悊瑙?/div>
+            <div id="summary" class="summary"></div>
+
+            <div class="meta">
+                <div class="meta-item">鎰忓浘绫诲瀷锛?span id="intentType" class="tag tag-intent"></span></div>
+                <div class="meta-item">缃俊搴︼細<span id="confidence"></span></div>
+                <div class="meta-item">鑽夋鐘舵€侊細<span id="draftStatus" class="tag"></span></div>
+            </div>
+
+            <div class="section-title">褰卞搷璁惧</div>
+            <div id="devices"></div>
+
+            <div id="commandsSection" style="display:none">
+                <div class="section-title">閰嶇疆鍛戒护</div>
+                <div id="commands" class="commands"></div>
+            </div>
+
+            <div id="warningsSection" style="display:none">
+                <div class="section-title">椋庨櫓鎻愮ず</div>
+                <ul id="warnings" class="warnings"></ul>
+            </div>
+
+            <div class="section-title">涓嬩竴姝?/div>
+            <div id="nextAction" class="next-action"></div>
+
+            <!-- 鎵ц寤鸿鍖哄煙 -->
+            <div id="executeSection" class="execute-section" style="display:none">
+                <div class="execute-header">
+                    <span id="executeStatus" class="execute-status"></span>
+                    <button id="executeBtn" class="btn-execute" style="display:none" onclick="showConfirm()">鎵ц閰嶇疆</button>
+                </div>
+                <div id="executeApi" class="execute-api"></div>
+                <div id="deployResult" class="deploy-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 纭瀵硅瘽妗?-->
+    <div id="confirmOverlay" class="overlay">
+        <div class="dialog">
+            <h3>纭鎵ц閰嶇疆涓嬪彂</h3>
+            <div id="dialogSummary" style="margin-bottom:8px;font-size:14px;"></div>
+            <ul id="dialogWarnings" class="dialog-warnings" style="display:none"></ul>
+            <p class="dialog-note">鎵ц鍚庡皢瀵圭湡瀹炶澶囦笅鍙戦厤缃懡浠わ紙闇€ ENABLE_REAL_ENSP=true锛夈€?/p>
+            <div class="dialog-actions">
+                <button class="btn-cancel" onclick="hideConfirm()">鍙栨秷</button>
+                <button id="btnConfirm" class="btn-confirm" onclick="executeDeploy()">纭鎵ц</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // intent_type 鈫?apply API 璺緞鏄犲皠
+        var INTENT_TO_APPLY_API = {
+            "pc_connectivity": "/api/config/pc-connectivity/apply",
+            "ospf": "/api/config/ospf/apply",
+            "vlan": "/api/config/vlan/apply",
+            "dhcp": "/api/config/dhcp/apply",
+        };
+
+        var lastResult = null;
+
+        function fill(text) {
+            document.getElementById('requestInput').value = text;
+        }
+
+        async function analyze() {
+            var input = document.getElementById('requestInput').value.trim();
+            if (!input) return;
+
+            var btn = document.getElementById('submitBtn');
+            var errorBox = document.getElementById('errorBox');
+            var resultSection = document.getElementById('resultSection');
+
+            btn.disabled = true;
+            btn.textContent = '鍒嗘瀽涓?..';
+            errorBox.className = 'error';
+            resultSection.className = 'result-section';
+            hideDeployResult();
+
+            try {
+                var resp = await fetch('/api/nl/plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ request: input }),
+                });
+
+                if (!resp.ok) {
+                    throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+                }
+
+                var data = await resp.json();
+                lastResult = data;
+                renderResult(data);
+                resultSection.className = 'result-section show';
+            } catch (e) {
+                errorBox.textContent = '璇锋眰澶辫触: ' + e.message;
+                errorBox.className = 'error show';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '鍒嗘瀽闇€姹?;
+            }
+        }
+
+        function renderResult(data) {
+            // Summary
+            document.getElementById('summary').textContent = data.summary || '鏃犳硶鐞嗚В璇ラ渶姹?;
+
+            // Intent type
+            document.getElementById('intentType').textContent = data.intent_type;
+
+            // Confidence
+            document.getElementById('confidence').textContent =
+                data.supported ? Math.round(data.confidence * 100) + '%' : '-';
+
+            // Draft status
+            var statusEl = document.getElementById('draftStatus');
+            if (data.error_message) {
+                statusEl.textContent = '鐢熸垚澶辫触';
+                statusEl.className = 'tag';
+                statusEl.style.background = '#ffebee';
+                statusEl.style.color = '#c62828';
+            } else if (data.draft) {
+                statusEl.textContent = '宸茬敓鎴愯崏妗?;
+                statusEl.className = 'tag tag-draft';
+            } else if (data.supported) {
+                statusEl.textContent = '宸插氨缁?;
+                statusEl.className = 'tag tag-ready';
+            } else {
+                statusEl.textContent = '涓嶆敮鎸?;
+                statusEl.className = 'tag';
+                statusEl.style.background = '#ffebee';
+                statusEl.style.color = '#c62828';
+            }
+
+            // Devices
+            var devicesEl = document.getElementById('devices');
+            devicesEl.innerHTML = data.target_devices.map(function(d) {
+                return '<span class="tag tag-device">' + d + '</span> ';
+            }).join('');
+
+            // Commands
+            var commandsSection = document.getElementById('commandsSection');
+            var commandsEl = document.getElementById('commands');
+            if (data.draft && data.draft.devices) {
+                var html = '';
+                for (var i = 0; i < data.draft.devices.length; i++) {
+                    var dev = data.draft.devices[i];
+                    html += '<span class="cmd-device"># ' + dev.device_name + '</span>\n';
+                    for (var j = 0; j < dev.commands.length; j++) {
+                        html += '<span class="cmd-line">  ' + dev.commands[j] + '</span>\n';
+                    }
+                    html += '\n';
+                }
+                commandsEl.innerHTML = html;
+                commandsSection.style.display = 'block';
+            } else {
+                commandsSection.style.display = 'none';
+            }
+
+            // Warnings
+            var warningsSection = document.getElementById('warningsSection');
+            var warningsEl = document.getElementById('warnings');
+            if (data.warnings && data.warnings.length > 0) {
+                warningsEl.innerHTML = data.warnings.map(function(w) { return '<li>' + w + '</li>'; }).join('');
+                warningsSection.style.display = 'block';
+            } else {
+                warningsSection.style.display = 'none';
+            }
+
+            // Next action
+            document.getElementById('nextAction').textContent = data.next_action || '';
+
+            // 鎵ц寤鸿鍖哄煙
+            renderExecuteSection(data);
+        }
+
+        function renderExecuteSection(data) {
+            var section = document.getElementById('executeSection');
+            var statusEl = document.getElementById('executeStatus');
+            var btn = document.getElementById('executeBtn');
+            var apiEl = document.getElementById('executeApi');
+
+            // 閲嶇疆
+            section.className = 'execute-section';
+            btn.style.display = 'none';
+            apiEl.textContent = '';
+            hideDeployResult();
+
+            // 涓嶆敮鎸?            if (!data.supported) {
+                section.className = 'execute-section preview-only';
+                statusEl.className = 'execute-status preview';
+                statusEl.textContent = '涓嶆敮鎸佽鎰忓浘锛屾棤娉曟墽琛?;
+                section.style.display = 'block';
+                return;
+            }
+
+            // 鑽夋鐢熸垚澶辫触
+            if (data.error_message) {
+                section.className = 'execute-section failed';
+                statusEl.className = 'execute-status failed';
+                statusEl.textContent = '鑽夋鐢熸垚澶辫触锛? + data.error_message;
+                section.style.display = 'block';
+                return;
+            }
+
+            // 宸插氨缁紙鏃犺崏妗?= 宸查厤缃畬鎴愶級
+            if (!data.draft) {
+                section.className = 'execute-section preview-only';
+                statusEl.className = 'execute-status preview';
+                statusEl.textContent = '褰撳墠閰嶇疆宸插氨缁紝鏃犻渶鎵ц';
+                section.style.display = 'block';
+                return;
+            }
+
+            // 鏈夎崏妗?鈥?妫€鏌?draft_id
+            if (!data.draft.draft_id) {
+                section.className = 'execute-section failed';
+                statusEl.className = 'execute-status failed';
+                statusEl.textContent = '褰撳墠鑽夋缂哄皯 draft_id锛屾嫆缁濇墽琛?;
+                section.style.display = 'block';
+                return;
+            }
+
+            // 妫€鏌ユ槸鍚︽湁瀵瑰簲鐨?apply API
+            var applyApi = INTENT_TO_APPLY_API[data.intent_type];
+            if (!applyApi) {
+                section.className = 'execute-section preview-only';
+                statusEl.className = 'execute-status preview';
+                statusEl.textContent = '褰撳墠浠呮敮鎸侀瑙堬紝鏆備笉鏀寔鎵ц';
+                section.style.display = 'block';
+                return;
+            }
+
+            // 鍙墽琛?            section.className = 'execute-section can-execute';
+            statusEl.className = 'execute-status can';
+            statusEl.textContent = '鑽夋宸插氨缁紝鍙墽琛岄厤缃笅鍙?;
+            btn.style.display = 'inline-block';
+            apiEl.textContent = 'POST ' + applyApi;
+            section.style.display = 'block';
+        }
+
+        function showConfirm() {
+            if (!lastResult) return;
+            var overlay = document.getElementById('confirmOverlay');
+            document.getElementById('dialogSummary').textContent = lastResult.summary;
+
+            var warningsEl = document.getElementById('dialogWarnings');
+            if (lastResult.warnings && lastResult.warnings.length > 0) {
+                warningsEl.innerHTML = lastResult.warnings.map(function(w) { return '<li>' + w + '</li>'; }).join('');
+                warningsEl.style.display = 'block';
+            } else {
+                warningsEl.style.display = 'none';
+            }
+            overlay.className = 'overlay show';
+        }
+
+        function hideConfirm() {
+            document.getElementById('confirmOverlay').className = 'overlay';
+        }
+
+        async function executeDeploy() {
+            if (!lastResult) return;
+            if (!lastResult.draft || !lastResult.draft.draft_id) {
+                showDeployError('缂哄皯 draft_id锛屾嫆缁濇墽琛?);
+                return;
+            }
+
+            var applyApi = INTENT_TO_APPLY_API[lastResult.intent_type];
+            if (!applyApi) return;
+
+            hideConfirm();
+            var btn = document.getElementById('executeBtn');
+            btn.disabled = true;
+            btn.textContent = '鎵ц涓?..';
+            hideDeployResult();
+
+            try {
+                var resp = await fetch(applyApi, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirmed: true, draft_id: lastResult.draft.draft_id }),
+                });
+
+                var data = await resp.json();
+                showDeployResult(data, resp.status);
+            } catch (e) {
+                showDeployError('璇锋眰澶辫触: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '鎵ц閰嶇疆';
+            }
+        }
+
+        function showDeployResult(data, statusCode) {
+            var el = document.getElementById('deployResult');
+            var html = '';
+
+            if (statusCode !== 200 || data.error) {
+                // 閿欒鍝嶅簲
+                el.className = 'deploy-result show failure';
+                html = '<h4>鎵ц澶辫触</h4>';
+                html += '<div>' + (data.error || data.detail || 'HTTP ' + statusCode) + '</div>';
+            } else if (data.success) {
+                el.className = 'deploy-result show success';
+                html = '<h4>鎵ц鎴愬姛</h4>';
+
+                // 璁惧缁撴灉
+                if (data.device_results) {
+                    for (var i = 0; i < data.device_results.length; i++) {
+                        var dr = data.device_results[i];
+                        var icon = dr.all_commands_success ? 'OK' : 'FAIL';
+                        html += '<div class="deploy-device">';
+                        html += '<span class="dev-name">' + dr.device_name + '</span> ';
+                        html += icon;
+                        if (dr.error) html += ' 鈥?' + dr.error;
+                        html += '</div>';
+                    }
+                }
+
+                // 楠岃瘉缁撴灉
+                if (data.verification) {
+                    var v = data.verification;
+                    html += '<div class="deploy-verify">';
+                    html += '<strong>杩為€氭€ч獙璇侊細</strong>';
+                    html += 'PC1鈫扨C2 ' + (v.pc1_to_pc2_reachable ? 'OK' : 'FAIL') + ' | ';
+                    html += 'PC2鈫扨C1 ' + (v.pc2_to_pc1_reachable ? 'OK' : 'FAIL');
+                    if (v.gaps && v.gaps.length > 0) {
+                        html += '<br>闂: ' + v.gaps.join('; ');
+                    }
+                    html += '</div>';
+                }
+            } else {
+                el.className = 'deploy-result show failure';
+                html = '<h4>鎵ц鏈垚鍔?/h4>';
+                html += '<div>' + (data.error || JSON.stringify(data)) + '</div>';
+            }
+
+            el.innerHTML = html;
+        }
+
+        function showDeployError(message) {
+            var el = document.getElementById('deployResult');
+            el.className = 'deploy-result show failure';
+            el.innerHTML = '<h4>鎵ц澶辫触</h4><div>' + message + '</div>';
+        }
+
+        function hideDeployResult() {
+            var el = document.getElementById('deployResult');
+            el.className = 'deploy-result';
+            el.innerHTML = '';
+        }
+
+        // Enter 閿彁浜?        document.getElementById('requestInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                analyze();
+            }
+        });
+    </script>
+</body>
+</html>

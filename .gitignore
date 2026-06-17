@@ -1,0 +1,12 @@
+*.topo
+*.pyc
+__pycache__/
+.pytest_cache/
+data/
+backups/
+output/
+*.bak
+*.bak-*
+.env
+.venv/
+venv/

@@ -1,0 +1,16 @@
+# --- 核心框架 ---
+fastapi==0.115.6
+uvicorn==0.34.0
+starlette>=0.40.0,<0.42.0
+
+# --- MCP Server ---
+# mcp SDK 会传递依赖 sse-starlette（要求 starlette>=0.49.1），
+# 但我们仅使用 stdio 传输，不使用 SSE，因此 starlette<0.42.0 无实际影响。
+# 如果未来需要 SSE 传输，需同步升级 fastapi 和 starlette。
+mcp>=1.20.0,<2.0.0
+
+# --- 数据与配置 ---
+pydantic>=2.10.0,<3.0.0
+pydantic-settings>=2.7.0,<3.0.0
+pyyaml>=6.0,<7.0
+python-dotenv>=1.0,<2.0

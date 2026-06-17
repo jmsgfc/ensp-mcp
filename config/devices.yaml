@@ -1,0 +1,121 @@
+devices:
+  - id: "82C76713-4A9E-460e-96CF-7FC22D790F83"
+    name: "internet"
+    type: "router"
+    vendor: "huawei"
+    model: "AR2220"
+    host: "127.0.0.1"
+    port: 2000
+    protocol: "telnet"
+    username_env: "ENSP_INTERNET_USERNAME"
+    password_env: "ENSP_INTERNET_PASSWORD"
+
+  - id: "39B26B83-1DB5-4535-B389-846BF6AB47A6"
+    name: "LSW1"
+    type: "switch"
+    vendor: "huawei"
+    model: "S5700"
+    host: "127.0.0.1"
+    port: 2002
+    protocol: "telnet"
+    username_env: "ENSP_LSW1_USERNAME"
+    password_env: "ENSP_LSW1_PASSWORD"
+
+  - id: "0C91A319-2BBC-4955-9275-75A34ACE2EA4"
+    name: "LSW2"
+    type: "switch"
+    vendor: "huawei"
+    model: "S3700"
+    host: "127.0.0.1"
+    port: 2003
+    protocol: "telnet"
+    username_env: "ENSP_LSW2_USERNAME"
+    password_env: "ENSP_LSW2_PASSWORD"
+
+  - id: "D6B6D9B9-6CCA-4623-984D-440C388502F0"
+    name: "LSW3"
+    type: "switch"
+    vendor: "huawei"
+    model: "S3700"
+    host: "127.0.0.1"
+    port: 2004
+    protocol: "telnet"
+    username_env: "ENSP_LSW3_USERNAME"
+    password_env: "ENSP_LSW3_PASSWORD"
+
+  - id: "6229F872-EBF9-47e1-9EFA-9CFDA4507B7E"
+    name: "LSW4"
+    type: "switch"
+    vendor: "huawei"
+    model: "S5700"
+    host: "127.0.0.1"
+    port: 2005
+    protocol: "telnet"
+    username_env: "ENSP_LSW4_USERNAME"
+    password_env: "ENSP_LSW4_PASSWORD"
+
+  - id: "C6F0CD99-AE61-41ca-BED6-BA903FECCD6F"
+    name: "AR2"
+    type: "router"
+    vendor: "huawei"
+    model: "AR2220"
+    host: "127.0.0.1"
+    port: 2006
+    protocol: "telnet"
+    username_env: "ENSP_AR2_USERNAME"
+    password_env: "ENSP_AR2_PASSWORD"
+
+  - id: "E873E77E-9703-4da4-BF9C-58F35D8F8E48"
+    name: "PC1"
+    type: "pc"
+    vendor: "virtual"
+    model: "PC"
+    host: null
+    port: null
+    protocol: null
+    username_env: null
+    password_env: null
+
+  - id: "8165E6D3-386E-47ff-B244-09EF7CB58E3E"
+    name: "PC2"
+    type: "pc"
+    vendor: "virtual"
+    model: "PC"
+    host: null
+    port: null
+    protocol: null
+    username_env: null
+    password_env: null
+
+  - id: "72445EE2-7B7E-457c-9ADB-CAE06F946682"
+    name: "PC3"
+    type: "pc"
+    vendor: "virtual"
+    model: "PC"
+    host: null
+    port: null
+    protocol: null
+    username_env: null
+    password_env: null
+
+  - id: "B5C13ED3-2A01-4732-BE31-2E50353EAA74"
+    name: "PC4"
+    type: "pc"
+    vendor: "virtual"
+    model: "PC"
+    host: null
+    port: null
+    protocol: null
+    username_env: null
+    password_env: null
+
+  - id: "A413BFE1-90F2-4bdc-BA5B-63B432C8F33A"
+    name: "PC5"
+    type: "pc"
+    vendor: "virtual"
+    model: "PC"
+    host: null
+    port: null
+    protocol: null
+    username_env: null
+    password_env: null

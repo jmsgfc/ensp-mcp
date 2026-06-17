@@ -1,0 +1,50 @@
+# 命令白名单配置
+# 当前阶段仅允许 display/show 查询命令
+# 危险命令在 blocked_commands 中显式拒绝
+
+allowed_prefixes:
+  - "display"
+  - "show"
+
+allowed_commands:
+  - "display version"
+  - "display interface brief"
+  - "display ip interface brief"
+  - "display ip routing-table"
+  - "display current-configuration"
+  - "display vlan"
+  - "display ip pool"
+  - "display dhcp statistics"
+  - "display arp"
+  - "display mac-address"
+  - "display ip routing-table statistics"
+  - "display interface"
+  - "display cpu-usage"
+  - "display memory-usage"
+  - "display device"
+  - "display logbuffer"
+  - "display clock"
+  - "display users"
+  - "display startup"
+  - "display ospf peer"
+  - "display ospf brief"
+  - "display ospf routing"
+
+command_patterns:
+  - "display current-configuration interface (vlanif\\d+|gigabitethernet\\d+/\\d+/\\d+|ethernet\\d+/\\d+/\\d+)"
+
+blocked_commands:
+  - "system-view"
+  - "undo"
+  - "reset"
+  - "reboot"
+  - "save"
+  - "delete"
+  - "format"
+  - "startup"
+  - "copy"
+  - "move"
+  - "rename"
+  - "erase"
+  - "debug"
+  - "terminal"

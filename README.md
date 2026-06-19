@@ -1,8 +1,29 @@
 # eNSP-MCP
 
-eNSP-MCP 是一个面向 Huawei eNSP 实验环境的 MCP（Model Context Protocol）服务。它把 eNSP 拓扑、设备 Telnet 管理、只读诊断、受控配置下发、配置看板和简单自然语言任务入口封装成 MCP 工具与 FastAPI 接口，方便大模型客户端或自动化脚本在实验拓扑上执行可审计的网络配置任务。
+eNSP-MCP 是一个面向 Huawei eNSP 实验环境的 MCP（Model Context Protocol）服务。它把 `.topo` 拓扑解析、设备清单、Telnet 只读诊断、受控配置下发、HTML 配置看板，以及面向实验场景的规则版自然语言规划封装成 MCP 工具与 FastAPI 接口，方便大模型客户端在实验拓扑上执行可审计的网络任务。
 
-当前项目不内置真实 LLM。自然语言能力是规则版关键词匹配，主要用于把常见实验需求路由到已有配置草案生成器。
+当前项目不内置真实 LLM。自然语言层仍是规则版关键词匹配，但这次新增了“参考配置学习能力”：可以从当前实验目录旁的配置样例中提炼协议模式、配置模板和参考草案，供 MCP 工具和规则规划器复用。
+
+## 本次新增能力
+
+- 拓扑解析改为**始终优先当前工作目录**，支持通过 `ENSP_MCP_WORKSPACE_DIR`、`ENSP_MCP_CALLER_CWD`、`CODEX_WORKSPACE`、`WORKSPACE` 定位当前实验目录，不再依赖仓库内置默认拓扑。
+- 新增参考配置学习服务 `backend/services/reference_config_service.py`，可从当前 `.topo` 同级或邻近目录的参考配置中提炼：
+  - `patterns`：协议/能力识别结果
+  - `templates`：可复用配置模板
+  - `reference_drafts`：按设备整理的参考命令块
+  - `capability_catalog`：能力目录、必填参数、验证关注点、模板类型
+- 新增 MCP 工具 `analyze_reference_configs`，用于只学习当前实验目录里的配置做法，不直接下发到设备。
+- 规则版自然语言规划器增强为既能处理可执行任务，也能返回“参考配置学习结果”：
+  - 继续支持 `pc_connectivity`、`ospf`、`vlan`、`dhcp`
+  - 新增参考意图识别：`ipsec_vpn`、`wifi`、`access_control`、`public_access`
+- 已整理出的协议能力包括：
+  - 总部分部站点互联的 `IPSec/GRE`
+  - 路由器 `DHCP` 与 `DHCP Relay`
+  - 无线 `SSID / VAP / AP Group / VLAN` 下发
+  - 访客 WiFi 与公司内网隔离的 `ACL`
+  - 某些 VLAN 禁止访问公网的选择性公网访问控制（当前模板表现为源地址匹配 NAT/放行策略）
+
+这部分能力当前定位是“学习做法、生成参考”，不是对任意拓扑自动部署。
 
 ## 当前能力
 
@@ -15,11 +36,11 @@ eNSP-MCP 是一个面向 Huawei eNSP 实验环境的 MCP（Model Context Protoco
   - `/static/nl-assistant.html`：自然语言配置助手调试页。
 - 支持只读命令执行，命令必须通过 `config/command_whitelist.yaml` 白名单。
 - 支持受控配置草案和下发：
-  - PC1/PC2 静态路由互通。
-  - OSPF 最小配置。
-  - VLAN 最小配置。
-  - DHCP 地址分发。
-  - 固定校园网实验：VRRP、MSTP、DHCP、Easy NAT。
+  - PC1/PC2 静态路由互通
+  - OSPF 最小配置
+  - VLAN 最小配置
+  - DHCP 地址分发
+  - 固定校园网实验：VRRP、MSTP、DHCP、Easy NAT
 - 支持配置保存、最近部署备份预览、回滚提示和操作日志。
 - MCP 工具调用默认会尝试打开 HTML 配置看板，便于同步观察配置状态。
 
@@ -47,7 +68,8 @@ backend/
     dhcp_analysis.py              DHCP 分析
     dhcp_verification_service.py  DHCP 最终验证
     campus_lab_service.py         固定校园网实验执行器
-    nl_intent_service.py          规则版自然语言意图解析
+    nl_intent_service.py          规则版自然语言意图解析与参考能力编排
+    reference_config_service.py   参考配置学习、模板提炼、能力目录生成
     log_service.py                内存操作日志
   static/
     index.html                    配置看板
@@ -55,7 +77,7 @@ backend/
   topology/
     parser.py                     .topo XML 解析
     interface_mapping.py          eNSP 接口索引到接口名映射
-    config.py                     拓扑和 devices.yaml 路径解析
+    config.py                     当前工作目录拓扑与 devices.yaml 解析
     validator.py                  devices.yaml 与拓扑校验
 config/
   command_whitelist.yaml          只读命令白名单
@@ -68,12 +90,18 @@ requirements.txt                  Python 依赖
 
 ## 拓扑选择规则
 
-项目没有内置默认拓扑。每次调用拓扑相关 API 或 MCP 工具时，都会动态解析当前拓扑：
+项目没有内置默认拓扑。每次调用拓扑相关 API 或 MCP 工具时，都会动态解析**当前实验目录**：
 
-1. 如果设置了 `TOPOLOGY_FILE`，使用该 `.topo` 文件。
-2. 如果没有设置，当前工作目录下优先使用 `<当前目录名>.topo`。
-3. 否则当前工作目录下必须只有一个 `.topo` 文件。
-4. 如果没有 `.topo` 或存在多个 `.topo`，工具会返回 `TOPOLOGY_UNAVAILABLE`。
+1. 如果设置了 `TOPOLOGY_FILE`，优先使用该 `.topo` 文件。
+2. 否则依次尝试当前工作目录来源：
+   - `ENSP_MCP_WORKSPACE_DIR`
+   - `ENSP_MCP_CALLER_CWD`
+   - `CODEX_WORKSPACE`
+   - `WORKSPACE`
+   - 进程当前目录
+3. 在该目录下优先匹配 `<当前目录名>.topo`。
+4. 如果目录下只有一个 `.topo`，则使用该文件。
+5. 如果没有 `.topo` 或存在多个 `.topo`，工具会返回 `TOPOLOGY_UNAVAILABLE`。
 
 `DEVICES_FILE` 可指定连接参数文件。未指定时，会优先尝试使用拓扑目录旁的 `config/devices.yaml`；不存在或校验不通过时，再使用项目内的 `config/devices.yaml`。设备身份以 `.topo` 为主，`devices.yaml` 只作为 host、port、protocol、凭据环境变量等连接参数补充。
 
@@ -87,8 +115,8 @@ cd C:\Users\jmsgfc\.agents\mcps\ensp_mcp
 # 建议使用 Python 3.10
 py -3.10 -m pip install -r requirements.txt
 
-# 指向当前实验拓扑
-$env:TOPOLOGY_FILE = "C:\Users\jmsgfc\Desktop\work55\work55.topo"
+# 指向当前实验目录，而不是写死某个仓库内拓扑
+$env:ENSP_MCP_WORKSPACE_DIR = "C:\Users\jmsgfc\Desktop\en"
 
 # Mock 模式启动 API 和看板
 $env:ENABLE_REAL_ENSP = "false"
@@ -104,7 +132,7 @@ http://127.0.0.1:8000/static/index.html
 真实 eNSP 模式：
 
 ```powershell
-$env:TOPOLOGY_FILE = "C:\Users\jmsgfc\Desktop\work55\work55.topo"
+$env:ENSP_MCP_WORKSPACE_DIR = "C:\Users\jmsgfc\Desktop\en"
 $env:ENABLE_REAL_ENSP = "true"
 py -3.10 -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
@@ -117,7 +145,7 @@ MCP 服务入口：
 
 ```powershell
 cd C:\Users\jmsgfc\.agents\mcps\ensp_mcp
-$env:TOPOLOGY_FILE = "C:\Users\jmsgfc\Desktop\work55\work55.topo"
+$env:ENSP_MCP_WORKSPACE_DIR = "C:\Users\jmsgfc\Desktop\en"
 $env:ENABLE_REAL_ENSP = "true"
 py -3.10 -m backend.mcp.server
 ```
@@ -132,7 +160,7 @@ MCP 客户端配置示例：
       "args": ["-3.10", "-m", "backend.mcp.server"],
       "cwd": "C:\\Users\\jmsgfc\\.agents\\mcps\\ensp_mcp",
       "env": {
-        "TOPOLOGY_FILE": "C:\\Users\\jmsgfc\\Desktop\\work55\\work55.topo",
+        "ENSP_MCP_WORKSPACE_DIR": "C:\\Users\\jmsgfc\\Desktop\\en",
         "ENABLE_REAL_ENSP": "true"
       }
     }
@@ -164,6 +192,7 @@ MCP 客户端配置示例：
 | `execute_task` | 根据自然语言任务规划、下发、验证，可自动保存 |
 | `verify_task` | 验证 `dhcp`、`ospf`、`pc_connectivity` 或全部 |
 | `execute_campus_lab` | 执行固定校园网实验配置、验证和保存 |
+| `analyze_reference_configs` | 学习当前实验目录中的参考配置，提炼能力与模板 |
 | `save_config` | 确认后保存路由器和交换机配置 |
 | `rollback_config` | 确认后按最近备份执行回滚流程 |
 
@@ -198,7 +227,27 @@ plan_nl_request
 execute_nl_request
 ```
 
-`plan_nl_request` 支持识别 PC 互通、OSPF、VLAN、DHCP。`execute_nl_request` 当前只实际执行 PC 互通和 DHCP 两类请求。
+## 参考配置学习输出
+
+`analyze_reference_configs` 与规则版自然语言规划器会返回以下几个核心字段：
+
+- `patterns`
+  - 当前配置样例中识别到的协议模式，例如 `ipsec_vpn`、`router_dhcp`、`wifi`、`access_control`、`public_access`
+- `templates`
+  - 归纳后的模板，如 `site_to_site_ipsec_gre`、`dhcp_pool_and_relay`、`ac_ssid_vlan_isolation`、`guest_acl_isolation`、`selective_source_nat`
+- `reference_drafts`
+  - 面向具体设备的参考命令块，适合人工审阅或后续能力扩展时复用
+- `capability_catalog`
+  - 每项能力的 `required_parameters`、`validation_focus`、`template_type`
+
+`plan_nl_request` 在识别到参考意图时，会额外返回：
+
+- `reference_templates`
+- `reference_drafts`
+- `protocol_capabilities`
+- `reference_details`
+
+这意味着规划器已经具备“先从当前实验配置里学会做法，再把能力返回给上层调用方”的能力。
 
 ## FastAPI 接口
 
@@ -245,6 +294,7 @@ execute_nl_request
 - 配置下发前会尝试备份设备当前配置，备份文件保存在项目根目录的 `backups/`，该目录不会上传到 Git。
 - 回滚能力基于最近部署前备份和适配器恢复接口。真实 VRP 配置恢复存在管理面覆盖风险，失败时会返回明确的人工恢复提示。
 - eNSP 实验环境支持无账号密码直登；如果设备需要账号密码，应在 `devices.yaml` 中填写环境变量名，再通过环境变量提供真实值，不要写入仓库。
+- `analyze_reference_configs` 是只读学习工具，不会把参考配置直接下发到设备。
 
 ## 典型任务
 
@@ -271,6 +321,12 @@ call_tool("run_command", {
 })
 ```
 
+学习当前实验目录中的参考配置能力：
+
+```python
+call_tool("analyze_reference_configs", {})
+```
+
 规划并执行 PC1/PC2 互通：
 
 ```python
@@ -282,7 +338,7 @@ call_tool("execute_task", {
 })
 ```
 
-规划并执行 DHCP：
+规划 DHCP，或读取带参考模板的规划结果：
 
 ```python
 call_tool("execute_task", {
@@ -290,6 +346,14 @@ call_tool("execute_task", {
     "mode": "apply_and_verify",
     "confirmed": True,
     "save_on_success": True
+})
+```
+
+```python
+call_tool("execute_task", {
+    "request": "学习一下这个实验里的 IPSec VPN 和访问控制配置做法",
+    "mode": "plan",
+    "confirmed": False
 })
 ```
 
@@ -328,12 +392,17 @@ cd C:\Users\jmsgfc\.agents\mcps\ensp_mcp
 py -3.10 -m pytest
 ```
 
-注意：当前测试集中有拓扑路径相关用例，项目根目录如果残留本地 `.topo` 文件，可能影响部分测试结果。仓库通过 `.gitignore` 排除了 `.topo`，建议把实验拓扑放在独立实验目录，或通过 `TOPOLOGY_FILE` 指定。
+本次与参考配置学习相关的定向测试：
+
+```powershell
+py -3.10 -m pytest tests\test_nl_intent_service.py tests\test_reference_config_service.py tests\test_topology_config.py
+```
 
 ## 当前限制
 
-- 自然语言解析是规则版关键词匹配，不是真实 LLM。
-- 规则版自然语言执行入口只执行 PC 互通和 DHCP；OSPF/VLAN 可以预览和通过专用工具下发。
+- 自然语言解析仍是规则版关键词匹配，不是真实 LLM。
+- 规则版自然语言执行入口主要执行 PC 互通和 DHCP；OSPF/VLAN 可以预览和通过专用工具下发。
+- `ipsec_vpn`、`wifi`、`access_control`、`public_access` 目前主要用于“学习参考配置并返回能力结果”，不是自动下发器。
 - DHCP 的真实 PC 侧状态无法直接通过 Telnet 读取，真实验证主要依赖交换机侧信息和拓扑配置。
 - OSPF、VLAN、DHCP 草案是面向当前实验拓扑的最小闭环，不是任意网络设计器。
 - `config/devices.yaml` 是连接参数示例，不能替代 `.topo` 拓扑本身。

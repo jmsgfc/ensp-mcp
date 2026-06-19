@@ -33,6 +33,7 @@ from backend.adapters.base_adapter import (
 )
 from backend.mcp.schemas import (
     ANALYZE_PC_CONNECTIVITY_INPUT,
+    ANALYZE_REFERENCE_CONFIGS_INPUT,
     APPLY_DHCP_CONFIG_INPUT,
     APPLY_OSPF_CONFIG_INPUT,
     APPLY_PC_CONNECTIVITY_CONFIG_INPUT,
@@ -63,11 +64,13 @@ from backend.mcp.schemas import (
     VERIFY_TASK_INPUT,
 )
 from backend.services.campus_lab_service import execute_campus_lab
+from backend.services.reference_config_service import analyze_reference_configs
 from backend.services.device_service import DeviceService
 from backend.topology.parser import TopologyParseError
 
 COMPACT_TOOL_NAMES = (
     "list_devices",
+    "analyze_reference_configs",
     "open_config_board",
     "connect_devices",
     "run_command",
@@ -347,6 +350,10 @@ def _handle_list_devices(device_service: DeviceService) -> dict[str, Any]:
         "count": len(devices),
     }
 
+
+def _handle_analyze_reference_configs() -> dict[str, Any]:
+    """Analyze sibling reference configs near the active topology."""
+    return analyze_reference_configs()
 
 def _handle_open_config_board(
     open_mode: str = "browser",
@@ -1698,6 +1705,12 @@ def _build_registry(device_service: DeviceService) -> dict[str, ToolDef]:
         input_schema=LIST_DEVICES_INPUT,
         handler=lambda: _handle_list_devices(device_service),
     )
+    registry["analyze_reference_configs"] = ToolDef(
+        name="analyze_reference_configs",
+        description="Analyze sibling reference configs for IPSec VPN, router DHCP, WiFi, ACLs, and selective internet access patterns.",
+        input_schema=ANALYZE_REFERENCE_CONFIGS_INPUT,
+        handler=lambda: _handle_analyze_reference_configs(),
+    )
     registry["open_config_board"] = ToolDef(
         name="open_config_board",
         description="Ensure the live HTML config board is reachable and open it in a browser or editor.",
@@ -2009,3 +2022,4 @@ def call_tool(name: str, arguments: Optional[dict[str, Any]] = None) -> dict[str
             "success": False,
             "error": f"宸ュ叿鎵ц寮傚父: {e}",
         }
+

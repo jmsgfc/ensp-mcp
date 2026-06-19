@@ -15,6 +15,11 @@ LIST_DEVICES_INPUT: dict[str, Any] = {
     "required": [],
 }
 
+ANALYZE_REFERENCE_CONFIGS_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+}
 GET_DEVICE_STATUS_INPUT: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -360,4 +365,5 @@ EXECUTE_NL_REQUEST_INPUT: dict[str, Any] = {
     },
     "required": ["request", "confirmed"],
 }
+
 

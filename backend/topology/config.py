@@ -1,10 +1,16 @@
-"""Runtime topology path resolution for the eNSP MCP.
+﻿"""Runtime topology path resolution for the eNSP MCP.
 
 Topology selection is intentionally dynamic:
 - TOPOLOGY_FILE may point to an absolute path.
-- A relative TOPOLOGY_FILE is resolved from the current working directory.
-- Without TOPOLOGY_FILE, the current working directory must contain the lab
-  topology: first <cwd-name>.topo, otherwise exactly one *.topo file.
+- A relative TOPOLOGY_FILE is resolved from the active lab workspace.
+- Without TOPOLOGY_FILE, the active lab workspace must contain the topology:
+  first <workspace-name>.topo, otherwise exactly one *.topo file.
+
+The active lab workspace is resolved in this order:
+1. ENSP_MCP_WORKSPACE_DIR
+2. ENSP_MCP_CALLER_CWD
+3. CODEX_WORKSPACE / WORKSPACE
+4. The MCP process current working directory
 
 There is no built-in fallback topology. If no current lab topology can be
 found, callers should return a clear tool-level error.
@@ -18,6 +24,12 @@ from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_DEVICES = _PROJECT_ROOT / "config" / "devices.yaml"
+_WORKSPACE_ENV_KEYS = (
+    "ENSP_MCP_WORKSPACE_DIR",
+    "ENSP_MCP_CALLER_CWD",
+    "CODEX_WORKSPACE",
+    "WORKSPACE",
+)
 
 
 def _resolve_current_relative(path_value: str) -> Path:
@@ -27,41 +39,65 @@ def _resolve_current_relative(path_value: str) -> Path:
     return (Path.cwd() / path).resolve()
 
 
-def get_topology_path() -> Path:
-    """Return the active .topo path for this invocation.
+def _candidate_workspace_dirs() -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
 
-    The function never reuses a previously discovered file and never falls back
-    to a project-bundled topology.
-    """
+    for key in _WORKSPACE_ENV_KEYS:
+        value = os.getenv(key)
+        if not value:
+            continue
+        resolved = Path(value).expanduser().resolve()
+        marker = str(resolved)
+        if marker not in seen:
+            candidates.append(resolved)
+            seen.add(marker)
+
+    cwd = Path.cwd().resolve()
+    cwd_marker = str(cwd)
+    if cwd_marker not in seen:
+        candidates.append(cwd)
+    return candidates
+
+
+def get_topology_path() -> Path:
+    """Return the active .topo path for this invocation."""
 
     env_path = os.getenv("TOPOLOGY_FILE")
     if env_path:
         path = _resolve_current_relative(env_path)
         if not path.exists():
-            raise FileNotFoundError(
-                f"TOPOLOGY_FILE 指定的拓扑文件不存在: {path}"
-            )
+            raise FileNotFoundError(f"TOPOLOGY_FILE 指定的拓扑文件不存在: {path}")
         if path.suffix.lower() != ".topo":
             raise RuntimeError(f"TOPOLOGY_FILE 必须指向 .topo 文件: {path}")
         return path
 
-    cwd = Path.cwd().resolve()
-    named_topo = cwd / f"{cwd.name}.topo"
-    if named_topo.exists():
-        return named_topo.resolve()
+    missing_dirs: list[Path] = []
+    multi_topo_errors: list[str] = []
 
-    topo_files = sorted(cwd.glob("*.topo"))
-    if len(topo_files) == 1:
-        return topo_files[0].resolve()
-    if len(topo_files) > 1:
-        names = ", ".join(path.name for path in topo_files)
+    for workspace_dir in _candidate_workspace_dirs():
+        named_topo = workspace_dir / f"{workspace_dir.name}.topo"
+        if named_topo.exists():
+            return named_topo.resolve()
+
+        topo_files = sorted(workspace_dir.glob("*.topo"))
+        if len(topo_files) == 1:
+            return topo_files[0].resolve()
+        if len(topo_files) > 1:
+            names = ", ".join(path.name for path in topo_files)
+            multi_topo_errors.append(f"{workspace_dir}: {names}")
+            continue
+        missing_dirs.append(workspace_dir)
+
+    if multi_topo_errors:
         raise RuntimeError(
-            "当前目录存在多个 .topo 文件，请设置 TOPOLOGY_FILE 明确指定: "
-            f"{names}"
+            "以下目录存在多个 .topo 文件，请设置 TOPOLOGY_FILE 明确指定: "
+            + " | ".join(multi_topo_errors)
         )
 
+    searched = ", ".join(str(path) for path in missing_dirs) or str(Path.cwd().resolve())
     raise FileNotFoundError(
-        f"当前目录没有 .topo 文件: {cwd}。请进入实验目录或设置 TOPOLOGY_FILE。"
+        f"未在候选工作目录中找到 .topo 文件: {searched}。请进入实验目录，或设置 TOPOLOGY_FILE / ENSP_MCP_WORKSPACE_DIR。"
     )
 
 

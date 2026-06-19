@@ -1,5 +1,4 @@
-import importlib
-from pathlib import Path
+﻿import importlib
 
 import pytest
 
@@ -38,6 +37,28 @@ def test_get_topology_path_resolves_relative_env_from_current_directory(monkeypa
     assert module.get_topology_path() == topo_path.resolve()
 
 
+def test_get_topology_path_prefers_workspace_env_before_process_cwd(monkeypatch, tmp_path):
+    caller_workspace = tmp_path / "caller-lab"
+    caller_workspace.mkdir()
+    caller_topo = caller_workspace / "caller-lab.topo"
+    caller_topo.write_text("topo", encoding="utf-8")
+
+    process_workspace = tmp_path / "process-lab"
+    process_workspace.mkdir()
+    process_topo = process_workspace / "process-lab.topo"
+    process_topo.write_text("topo", encoding="utf-8")
+
+    monkeypatch.delenv("TOPOLOGY_FILE", raising=False)
+    monkeypatch.delenv("DEVICES_FILE", raising=False)
+    monkeypatch.setenv("ENSP_MCP_WORKSPACE_DIR", str(caller_workspace))
+    monkeypatch.chdir(process_workspace)
+    module = _reload_config_module()
+
+    assert module.get_topology_path() == caller_topo.resolve()
+    assert module.get_topology_workspace_dir() == caller_workspace.resolve()
+    assert module.get_topology_path() != process_topo.resolve()
+
+
 def test_get_topology_path_uses_current_directory_named_topo(monkeypatch, tmp_path):
     workspace_dir = tmp_path / "work88"
     workspace_dir.mkdir()
@@ -46,6 +67,7 @@ def test_get_topology_path_uses_current_directory_named_topo(monkeypatch, tmp_pa
 
     monkeypatch.delenv("TOPOLOGY_FILE", raising=False)
     monkeypatch.delenv("DEVICES_FILE", raising=False)
+    monkeypatch.delenv("ENSP_MCP_WORKSPACE_DIR", raising=False)
     monkeypatch.chdir(workspace_dir)
     module = _reload_config_module()
 
@@ -64,10 +86,12 @@ def test_get_devices_config_path_follows_topology_workspace(monkeypatch, tmp_pat
 
     monkeypatch.delenv("TOPOLOGY_FILE", raising=False)
     monkeypatch.delenv("DEVICES_FILE", raising=False)
+    monkeypatch.delenv("ENSP_MCP_WORKSPACE_DIR", raising=False)
     monkeypatch.chdir(workspace_dir)
     module = _reload_config_module()
 
     assert module.get_devices_config_path() == devices_path
+
 
 
 def test_get_devices_config_path_falls_back_to_project_default_for_current_topo(monkeypatch, tmp_path):
@@ -78,6 +102,7 @@ def test_get_devices_config_path_falls_back_to_project_default_for_current_topo(
 
     monkeypatch.delenv("TOPOLOGY_FILE", raising=False)
     monkeypatch.delenv("DEVICES_FILE", raising=False)
+    monkeypatch.delenv("ENSP_MCP_WORKSPACE_DIR", raising=False)
     monkeypatch.chdir(workspace_dir)
     module = _reload_config_module()
 
@@ -85,11 +110,19 @@ def test_get_devices_config_path_falls_back_to_project_default_for_current_topo(
     assert module.get_devices_config_path() == module._DEFAULT_DEVICES
 
 
-def test_get_topology_path_does_not_use_project_default(monkeypatch):
+def test_get_topology_path_raises_when_no_candidate_workspace_has_topology(monkeypatch, tmp_path):
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+
     monkeypatch.delenv("TOPOLOGY_FILE", raising=False)
     monkeypatch.delenv("DEVICES_FILE", raising=False)
+    monkeypatch.delenv("ENSP_MCP_WORKSPACE_DIR", raising=False)
+    monkeypatch.delenv("ENSP_MCP_CALLER_CWD", raising=False)
+    monkeypatch.delenv("CODEX_WORKSPACE", raising=False)
+    monkeypatch.delenv("WORKSPACE", raising=False)
+    monkeypatch.chdir(empty_dir)
     module = _reload_config_module()
-    monkeypatch.chdir(module._PROJECT_ROOT)
 
     with pytest.raises(FileNotFoundError):
         module.get_topology_path()
+

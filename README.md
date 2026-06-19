@@ -1,6 +1,6 @@
 # eNSP-MCP
 
-eNSP-MCP 是一个面向 Huawei eNSP 实验环境的 MCP 服务。项目围绕“当前实验目录”工作，把 `.topo` 拓扑识别、设备清单读取、只读诊断、受控配置下发、配置看板，以及参考配置学习能力统一封装为 MCP 工具和 FastAPI 接口，适合在教学实验、课程设计和网络场景演示中作为大模型的网络操作后端。
+eNSP-MCP 是一个面向 Huawei eNSP 实验环境的 MCP 服务。项目围绕“当前实验目录”工作，把 `.topo` 拓扑识别、设备清单读取、只读诊断、受控配置下发、配置看板，以及基于现网参考配置沉淀出的协议能力统一封装为 MCP 工具和 FastAPI 接口，适合在教学实验、课程设计和网络场景演示中作为大模型的网络操作后端。
 
 项目当前定位为最终版：核心能力、工具边界和使用方式已经稳定，文档以交付使用为准，不再按开发阶段描述。
 
@@ -10,7 +10,7 @@ eNSP-MCP 解决的是三类问题：
 
 - 让大模型能基于当前 `.topo` 正确识别实验设备，而不是依赖写死的拓扑。
 - 让网络配置动作保持可审计、可确认、可回滚，而不是直接暴露自由命令执行。
-- 让系统不仅能执行少量固定任务，还能从当前实验目录中的参考配置中“学习做法”，形成协议级能力输出。
+- 让系统不仅能执行固定实验任务，还具备已经沉淀到 MCP 内部的协议级配置能力。
 
 ## 核心能力
 
@@ -28,9 +28,11 @@ eNSP-MCP 解决的是三类问题：
 - 所有写操作都需要显式确认。
 - 真实下发需要 `ENABLE_REAL_ENSP=true`，默认可在 Mock 模式下联调。
 
-### 3. 面向实验场景的配置执行
+### 3. 项目内置能力
 
-项目内置了几类稳定闭环任务：
+项目内置能力分为两类：可执行闭环任务，以及协议级内置配置能力。
+
+可执行闭环任务：
 
 - PC 互通配置与验证
 - OSPF 最小闭环配置
@@ -38,11 +40,7 @@ eNSP-MCP 解决的是三类问题：
 - DHCP 地址分发配置
 - 固定校园网实验执行器：VRRP、MSTP、DHCP、Easy NAT
 
-### 4. 参考配置学习能力
-
-这是最终版的重点能力之一。系统可以从当前实验目录旁的参考配置中提炼协议能力，而不是仅仅做字符串匹配。
-
-已支持学习和归纳的能力包括：
+协议级内置配置能力：
 
 - `IPSec/GRE` 站点互联
 - 路由器 `DHCP` 与 `DHCP Relay`
@@ -50,14 +48,14 @@ eNSP-MCP 解决的是三类问题：
 - 访客 WiFi 与公司内网隔离的 `ACL`
 - 某些 VLAN 不允许访问公网的选择性公网访问控制
 
-学习结果会整理为：
+这些协议能力来自对参考配置做法的提炼与固化，现已作为 MCP 的内置能力存在。相关结果会整理为：
 
 - `patterns`：识别到的能力类型
 - `templates`：归纳后的模板
 - `reference_drafts`：面向具体设备的参考命令块
 - `capability_catalog`：能力目录、参数要求、验证关注点、模板类型
 
-这部分能力当前用于“学习做法、生成参考、向上层返回能力信息”，不是自动把任意参考配置直接下发到设备。
+这些结果用于让 MCP 在规划和能力表达层具备对应协议知识，不再把它描述为独立的“参考学习能力”模块。
 
 ## 系统结构
 
@@ -82,7 +80,7 @@ requirements.txt                  Python 依赖
 - `backend/topology/config.py`
   - 负责以当前工作目录为准定位 `.topo`
 - `backend/services/reference_config_service.py`
-  - 负责参考配置学习、模板提炼和能力目录生成
+  - 负责参考配置能力提炼、模板固化和能力目录生成
 - `backend/services/nl_intent_service.py`
   - 负责规则版自然语言意图识别与能力编排
 - `backend/mcp/tools.py`
@@ -204,7 +202,7 @@ MCP 客户端配置示例：
 $env:ENSP_MCP_TOOL_PROFILE = "legacy"
 ```
 
-## 自然语言与参考学习
+## 自然语言与内置协议能力
 
 规则版自然语言规划器支持两类能力。
 
@@ -215,21 +213,21 @@ $env:ENSP_MCP_TOOL_PROFILE = "legacy"
 - `vlan`
 - `dhcp`
 
-### 可学习能力
+### 已内置的协议能力
 
 - `ipsec_vpn`
 - `wifi`
 - `access_control`
 - `public_access`
 
-当识别到学习类请求时，系统会返回：
+当识别到相关请求时，系统会返回：
 
 - `reference_templates`
 - `reference_drafts`
 - `protocol_capabilities`
 - `reference_details`
 
-这意味着上层调用方可以把 eNSP-MCP 既当作“任务执行器”，也当作“协议做法提炼器”。
+这意味着上层调用方可以把 eNSP-MCP 既当作“任务执行器”，也当作具备协议能力表达的网络实验后端。
 
 ## FastAPI 接口
 
@@ -292,7 +290,7 @@ call_tool("run_command", {
 })
 ```
 
-学习当前实验目录中的参考配置：
+读取已内置的协议能力结果：
 
 ```python
 call_tool("analyze_reference_configs", {})
@@ -320,7 +318,7 @@ call_tool("execute_task", {
 })
 ```
 
-读取 IPSec/ACL 学习结果：
+读取 IPSec/ACL 能力结果：
 
 ```python
 call_tool("execute_task", {
@@ -359,6 +357,6 @@ py -3.10 -m pytest tests\test_nl_intent_service.py tests\test_reference_config_s
 
 - 项目面向 eNSP 教学实验与课程设计，不是通用网络自动化平台。
 - 自然语言层为规则版规划器，不是通用 LLM 推理引擎。
-- `pc_connectivity`、`dhcp` 等任务已形成执行闭环；`ipsec_vpn`、`wifi`、`access_control`、`public_access` 目前以学习和返回能力结果为主。
+- `pc_connectivity`、`dhcp` 等任务已形成执行闭环；`ipsec_vpn`、`wifi`、`access_control`、`public_access` 已作为 MCP 的内置协议能力存在，但当前主要用于规划、表达和生成能力结果。
 - OSPF、VLAN、DHCP 等草案是面向实验拓扑的最小闭环，不是任意网络设计器。
 - 本仓库不会上传本地 `.topo`、设备备份、截图、日志、缓存和虚拟环境。

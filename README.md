@@ -2,8 +2,6 @@
 
 eNSP-MCP 是一个面向 Huawei eNSP 实验环境的 MCP 服务。项目围绕“当前实验目录”工作，把 `.topo` 拓扑识别、设备清单读取、只读诊断、受控配置下发、配置看板，以及基于现网参考配置沉淀出的协议能力统一封装为 MCP 工具和 FastAPI 接口，适合在教学实验、课程设计和网络场景演示中作为大模型的网络操作后端。
 
-项目当前定位为最终版：核心能力、工具边界和使用方式已经稳定，文档以交付使用为准，不再按开发阶段描述。
-
 ## 项目定位
 
 eNSP-MCP 解决的是三类问题：
@@ -188,16 +186,12 @@ $env:ENSP_MCP_TOOL_PROFILE = "legacy"
 
 ## 自然语言与内置协议能力
 
-规则版自然语言规划器支持两类能力。
-
 ### 可执行任务
 
 - `pc_connectivity`
 - `ospf`
 - `vlan`
 - `dhcp`
-
-### 已内置的协议能力
 
 - `ipsec_vpn`
 - `wifi`
@@ -267,7 +261,7 @@ call_tool("open_config_board", {"open_mode": "browser"})
 
 ## 可视化配置界面
 
-HTML 配置看板用于把当前目录下拓扑和设备配置结果可视化展示出来，适合在实验演示、排障和课堂讲解时直接使用。
+HTML 配置看板用于把当前目录下拓扑和设备配置结果可视化展示出来。
 
 当前界面包含这些能力：
 
@@ -322,7 +316,7 @@ call_tool("execute_task", {
 
 ```python
 call_tool("execute_task", {
-    "request": "学习这个实验里的 IPSec VPN 和访问控制配置做法",
+    "request": "配置不同区域的公网通信",
     "mode": "plan",
     "confirmed": False
 })
@@ -336,7 +330,6 @@ call_tool("execute_task", {
 - `apply_*`、`save`、`rollback` 等写操作都要求显式传入 `confirmed=true`。
 - 大多数真实写操作还要求 `ENABLE_REAL_ENSP=true`。
 - 下发前会尽量备份配置；备份保存在本地 `backups/`，不进入 Git。
-- `analyze_reference_configs` 是只读学习工具，不会直接下发参考配置。
 
 ## 测试
 
@@ -345,10 +338,4 @@ call_tool("execute_task", {
 ```powershell
 cd C:\Users\jmsgfc\.agents\mcps\ensp_mcp
 py -3.10 -m pytest
-```
-
-运行与最终版能力相关的关键测试：
-
-```powershell
-py -3.10 -m pytest tests\test_nl_intent_service.py tests\test_reference_config_service.py tests\test_topology_config.py tests\test_main_refresh_middleware.py
 ```

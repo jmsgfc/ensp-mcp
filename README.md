@@ -265,6 +265,22 @@ print(call_tool("list_devices"))
 call_tool("open_config_board", {"open_mode": "browser"})
 ```
 
+## 可视化配置界面
+
+HTML 配置看板用于把当前目录下拓扑和设备配置结果可视化展示出来，适合在实验演示、排障和课堂讲解时直接使用。
+
+当前界面包含这些能力：
+
+- 设备列表：展示当前拓扑中的设备、型号和在线状态。
+- 当前配置视图：读取并展示设备当前配置，支持复制配置文本。
+- 配置变更对比：对比当前快照与上一次读取结果，显示新增和移除内容。
+- 拓扑视图：显示当前 `.topo` 的设备与连线关系，并支持查看节点连接详情。
+- 刷新配置：同步刷新设备列表和当前配置结果。
+- 刷新拓扑：手动重新读取当前目录中的 `.topo` 文件。
+- 自动同步：进入拓扑页后会自动拉取当前目录结果，页面可见时会定时刷新拓扑。
+
+如果当前目录下拓扑发生新增、删除或连线变化，只要 eNSP 已将修改保存到当前 `.topo` 文件，配置看板就会在刷新后同步显示最新结果。
+
 执行只读命令：
 
 ```python
@@ -334,13 +350,5 @@ py -3.10 -m pytest
 运行与最终版能力相关的关键测试：
 
 ```powershell
-py -3.10 -m pytest tests\test_nl_intent_service.py tests\test_reference_config_service.py tests\test_topology_config.py
+py -3.10 -m pytest tests\test_nl_intent_service.py tests\test_reference_config_service.py tests\test_topology_config.py tests\test_main_refresh_middleware.py
 ```
-
-## 适用范围与限制
-
-- 项目面向 eNSP 教学实验与课程设计，不是通用网络自动化平台。
-- 自然语言层为规则版规划器，不是通用 LLM 推理引擎。
-- `pc_connectivity`、`dhcp` 等任务已形成执行闭环；`ipsec_vpn`、`wifi`、`access_control`、`public_access` 已作为 MCP 的内置协议能力存在，但当前主要用于规划、表达和生成能力结果。
-- OSPF、VLAN、DHCP 等草案是面向实验拓扑的最小闭环，不是任意网络设计器。
-- 本仓库不会上传本地 `.topo`、设备备份、截图、日志、缓存和虚拟环境。

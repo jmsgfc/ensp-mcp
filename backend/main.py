@@ -15,7 +15,8 @@ from datetime import datetime
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -33,7 +34,7 @@ from backend.services.log_service import LogService, LogLevel, LogAction
 from backend.runtime.context import get_device_service, get_log_service
 from backend.topology.config import get_topology_path
 from backend.topology.interface_mapping import interface_name
-from backend.topology.parser import parse_topology
+from backend.topology.parser import TopologyParseError, parse_topology
 
 # 初始化服务（从共享上下文获取，与 MCP 层共用同一实例）
 log_service = get_log_service()
@@ -50,6 +51,25 @@ app = FastAPI(
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_static_dir):
     app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
+
+_TOPOLOGY_REFRESH_EXEMPT_PATHS = {"/api/logs", "/api/health/ensp"}
+
+
+@app.middleware("http")
+async def refresh_topology_context(request: Request, call_next):
+    if request.url.path.startswith("/api/") and request.url.path not in _TOPOLOGY_REFRESH_EXEMPT_PATHS:
+        try:
+            device_service.refresh_adapter()
+        except (FileNotFoundError, RuntimeError, TopologyParseError) as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": str(exc),
+                    "error_code": "TOPOLOGY_UNAVAILABLE",
+                },
+            )
+    return await call_next(request)
 
 
 # --- 请求/响应模型 ---

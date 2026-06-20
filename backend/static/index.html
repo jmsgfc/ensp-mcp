@@ -950,7 +950,7 @@
     <div class="page">
         <header class="topbar">
             <div>
-                <div class="brand"><span class="brand-icon">›</span> ENSP-MCP / LIVE CONFIG BOARD</div>
+                <div class="brand"><span class="brand-icon">&gt;</span> ENSP-MCP / LIVE CONFIG BOARD</div>
                 <h1>设备当前配置看板</h1>
                 <p class="subtitle">实时查看网络设备当前配置与状态</p>
             </div>
@@ -995,31 +995,31 @@
 
                     <div class="stat-grid">
                         <div class="stat-card">
-                            <div class="stat-icon">♙</div>
+                            <div class="stat-icon">#</div>
                             <div><div class="stat-label">设备类型</div><div id="metaType" class="stat-value">-</div></div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-icon">☷</div>
+                            <div class="stat-icon">≡</div>
                             <div><div class="stat-label">配置行数</div><div class="stat-value"><span id="metaLines">0</span> 行</div></div>
                         </div>
                         <div class="stat-card add">
-                            <div class="stat-icon">＋</div>
+                            <div class="stat-icon">+</div>
                             <div><div class="stat-label">新增</div><div class="stat-value"><span id="metaAdded">0</span> 行</div></div>
                         </div>
                         <div class="stat-card remove">
-                            <div class="stat-icon">−</div>
+                            <div class="stat-icon">-</div>
                             <div><div class="stat-label">移除</div><div class="stat-value"><span id="metaRemoved">0</span> 行</div></div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-icon">◔</div>
+                            <div class="stat-icon">◷</div>
                             <div><div class="stat-label">更新时间</div><div id="metaFetchedAt" class="stat-value" style="font-size:15px;">-</div></div>
                         </div>
                     </div>
 
                     <div class="snapshot-panel">
                         <div class="snapshot-head">
-                            <div class="section-title">▣ 当前配置快照</div>
-                            <button id="copyBtn" class="copy-btn" type="button">□ 复制配置</button>
+                            <div class="section-title">当前配置快照</div>
+                            <button id="copyBtn" class="copy-btn" type="button">复制配置</button>
                         </div>
                         <div class="snapshot-body">
                             <div>
@@ -1044,13 +1044,13 @@
 
                 <section class="compare-panel view-panel config-view">
                     <div class="compare-head">
-                        <div class="section-title">⚖ 配置变更对比 <span class="compare-subtitle">当前版本与上一次快照的对比</span></div>
+                        <div class="section-title">配置变更对比 <span class="compare-subtitle">当前版本与上一次快照的对比</span></div>
                         <button id="toggleDiffBtn" class="detail-link" type="button">查看详情 →</button>
                     </div>
                     <div class="compare-grid">
-                        <div class="compare-stat add"><span class="stat-icon">＋</span><span>新增行数<b id="compareAdded">0</b></span></div>
-                        <div class="compare-stat remove"><span class="stat-icon">−</span><span>移除行数<b id="compareRemoved">0</b></span></div>
-                        <div class="compare-stat"><span class="stat-icon">▤</span><span>总配置行数<b id="compareTotal">0</b></span></div>
+                        <div class="compare-stat add"><span class="stat-icon">+</span><span>新增行数<b id="compareAdded">0</b></span></div>
+                        <div class="compare-stat remove"><span class="stat-icon">-</span><span>移除行数<b id="compareRemoved">0</b></span></div>
+                        <div class="compare-stat"><span class="stat-icon">≡</span><span>总配置行数<b id="compareTotal">0</b></span></div>
                     </div>
                     <div id="diffDrawer" class="diff-drawer">
                         <div class="diff-card">
@@ -1070,7 +1070,10 @@
                             <h2>拓扑视图</h2>
                             <div id="topologyMeta" class="topology-meta">正在加载拓扑...</div>
                         </div>
-                        <button id="fitTopoBtn" class="copy-btn" type="button">适配画布</button>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <button id="refreshTopologyBtn" class="copy-btn" type="button">刷新拓扑</button>
+                            <button id="fitTopoBtn" class="copy-btn" type="button">适配画布</button>
+                        </div>
                     </div>
                     <div class="topology-body">
                         <div id="topologyCanvas" class="topology-canvas">
@@ -1138,8 +1141,11 @@
             topologySvg: document.getElementById("topologySvg"),
             topologyMeta: document.getElementById("topologyMeta"),
             topologyDetail: document.getElementById("topologyDetail"),
+            refreshTopologyBtn: document.getElementById("refreshTopologyBtn"),
             fitTopoBtn: document.getElementById("fitTopoBtn"),
         };
+
+        let topologyAutoRefreshTimer = null;
 
         function escapeHtml(value) {
             return String(value).replace(/[&<>"']/g, function(char) {
@@ -1216,12 +1222,7 @@
             const offset = 17 + stagger;
             const width = Math.max(58, label.length * 6.5 + 14);
             const height = 20;
-            return {
-                x: midX + nx * offset,
-                y: midY + ny * offset,
-                width,
-                height,
-            };
+            return { x: midX + nx * offset, y: midY + ny * offset, width, height };
         }
 
         function splitLines(config) {
@@ -1406,11 +1407,10 @@
             refs.configPanels.forEach(panel => { panel.hidden = view !== "config"; });
             refs.topologyView.hidden = view !== "topology";
             if (view === "topology") {
-                if (!state.topology) {
-                    loadTopology();
-                } else {
-                    renderTopology();
-                }
+                refreshTopologyOnly(true);
+                startTopologyAutoRefresh();
+            } else {
+                stopTopologyAutoRefresh();
             }
         }
 
@@ -1475,7 +1475,7 @@
                 const target = devicesById.get(link.target);
                 if (!source || !target) return "";
                 const active = state.selectedLinkId === link.id || state.topologySelectedId === source.id || state.topologySelectedId === target.id;
-                const label = `${shortInterfaceName(link.source_interface)} ↔ ${shortInterfaceName(link.target_interface)}`;
+                const label = `${shortInterfaceName(link.source_interface)} → ${shortInterfaceName(link.target_interface)}`;
                 const labelBox = topologyLabelPosition(source, target, label, index);
                 return `
                     <g data-link-id="${escapeHtml(link.id)}">
@@ -1536,8 +1536,8 @@
                 const active = state.selectedLinkId === link.id ? " active" : "";
                 return `
                     <button class="topology-link-card${active}" type="button" data-link-id="${escapeHtml(link.id)}">
-                        <b>${escapeHtml(device.name)} ↔ ${escapeHtml(peerName)}</b>
-                        ${escapeHtml(localInterface || "-")} ↔ ${escapeHtml(peerInterface || "-")}
+                        <b>${escapeHtml(device.name)} → ${escapeHtml(peerName)}</b>
+                        ${escapeHtml(localInterface || "-")} → ${escapeHtml(peerInterface || "-")}
                     </button>
                 `;
             }).join("");
@@ -1612,22 +1612,71 @@
             }
         }
 
-        async function loadDevices() {
+        async function loadDevices(options = {}) {
+            const { preserveSelection = true, refreshSelectedConfig = true } = options;
             try {
+                const previousSelectedId = preserveSelection ? state.selectedId : null;
                 const payload = await fetchJson("/api/devices");
                 state.devices = normalizeDevices(payload);
-                state.selectedId = state.devices[0] ? state.devices[0].id : null;
-                state.topologySelectedId = state.selectedId;
+
+                const hasPrevious = previousSelectedId && state.devices.some(device => device.id === previousSelectedId);
+                state.selectedId = hasPrevious ? previousSelectedId : (state.devices[0] ? state.devices[0].id : null);
+                state.topologySelectedId = state.topologySelectedId && state.devices.some(device => device.id === state.topologySelectedId)
+                    ? state.topologySelectedId
+                    : state.selectedId;
                 renderDeviceList();
                 renderStage();
                 await loadTopology();
-                if (state.selectedId) await refreshConfig(true);
+                if (refreshSelectedConfig && state.selectedId) await refreshConfig(true);
+                return true;
             } catch (error) {
-                setBanner("error", "加载设备失败：" + error.message);
+                setBanner("error", "设备列表加载失败：" + error.message);
+                return false;
             }
         }
 
-        refs.refreshBtn.addEventListener("click", () => refreshConfig(false));
+        async function refreshTopologyOnly(silent) {
+            refs.refreshTopologyBtn.disabled = true;
+            refs.refreshTopologyBtn.textContent = "刷新中";
+            if (!silent) setBanner("success", "正在同步当前目录下的拓扑...");
+
+            try {
+                const ok = await loadDevices({ preserveSelection: true, refreshSelectedConfig: false });
+                if (ok && state.activeView === "topology") {
+                    renderTopology();
+                }
+                if (ok && !silent) {
+                    setBanner("success", "拓扑已更新到当前目录的最新结果。");
+                }
+            } catch (error) {
+                setBanner("error", "拓扑刷新失败：" + error.message);
+            } finally {
+                refs.refreshTopologyBtn.disabled = false;
+                refs.refreshTopologyBtn.textContent = "刷新拓扑";
+            }
+        }
+
+        async function refreshAll(silent) {
+            if (state.refreshing) return;
+            state.refreshing = true;
+            refs.refreshBtn.disabled = true;
+            refs.refreshBtn.textContent = "↻ 刷新中";
+            if (!silent) setBanner("success", "正在刷新设备列表和当前配置...");
+
+            try {
+                const ok = await loadDevices({ preserveSelection: true, refreshSelectedConfig: true });
+                if (ok && !silent) {
+                    setBanner("success", "设备列表和当前配置已更新。");
+                }
+            } finally {
+                state.refreshing = false;
+                refs.refreshBtn.disabled = false;
+                refs.refreshBtn.textContent = "↻ 刷新配置";
+            }
+        }
+
+        refs.refreshBtn.addEventListener("click", () => refreshAll(false));
+        refs.refreshTopologyBtn.addEventListener("click", () => refreshTopologyOnly(false));
         refs.copyBtn.addEventListener("click", async () => {
             const device = currentDevice();
             const snapshot = device ? state.snapshots[device.id] : null;
@@ -1637,7 +1686,7 @@
         });
         refs.toggleDiffBtn.addEventListener("click", () => {
             refs.diffDrawer.classList.toggle("open");
-            refs.toggleDiffBtn.textContent = refs.diffDrawer.classList.contains("open") ? "收起详情 ↑" : "查看详情 →";
+            refs.toggleDiffBtn.textContent = refs.diffDrawer.classList.contains("open") ? "收起详情 →" : "查看详情 →";
         });
         refs.searchInput.addEventListener("input", event => {
             state.query = event.target.value.trim().toLowerCase();
@@ -1654,6 +1703,30 @@
             tab.addEventListener("click", () => switchView(tab.dataset.view));
         });
         refs.fitTopoBtn.addEventListener("click", () => renderTopology());
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible" && state.activeView === "topology") {
+                refreshTopologyOnly(true);
+                startTopologyAutoRefresh();
+            } else if (document.visibilityState !== "visible") {
+                stopTopologyAutoRefresh();
+            }
+        });
+
+        function startTopologyAutoRefresh() {
+            stopTopologyAutoRefresh();
+            topologyAutoRefreshTimer = window.setInterval(() => {
+                if (state.activeView === "topology" && document.visibilityState === "visible") {
+                    refreshTopologyOnly(true);
+                }
+            }, 5000);
+        }
+
+        function stopTopologyAutoRefresh() {
+            if (topologyAutoRefreshTimer) {
+                window.clearInterval(topologyAutoRefreshTimer);
+                topologyAutoRefreshTimer = null;
+            }
+        }
 
         loadDevices();
     </script>

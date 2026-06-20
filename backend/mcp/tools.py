@@ -66,6 +66,7 @@ from backend.mcp.schemas import (
 from backend.services.campus_lab_service import execute_campus_lab
 from backend.services.reference_config_service import analyze_reference_configs
 from backend.services.device_service import DeviceService
+from backend.topology.config import get_topology_path
 from backend.topology.parser import TopologyParseError
 
 COMPACT_TOOL_NAMES = (
@@ -135,12 +136,14 @@ def _is_url_available(url: str, timeout: float = 1.5) -> bool:
         return False
 
 
-def _spawn_detached_process(command: list[str], cwd: Path) -> subprocess.Popen:
+def _spawn_detached_process(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> subprocess.Popen:
     kwargs: dict[str, Any] = {
         "cwd": str(cwd),
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
     }
+    if env is not None:
+        kwargs["env"] = env
     if os.name == "nt":
         creationflags = 0
         creationflags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -152,6 +155,27 @@ def _spawn_detached_process(command: list[str], cwd: Path) -> subprocess.Popen:
     return subprocess.Popen(command, **kwargs)
 
 
+def _get_board_topology(url: str, timeout: float = 1.5) -> str | None:
+    parsed = urllib.parse.urlsplit(url)
+    graph_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/api/topology/graph", "", ""))
+    try:
+        with urllib.request.urlopen(graph_url, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    topology = payload.get("topology")
+    return topology if isinstance(topology, str) and topology else None
+
+
+def _is_board_serving_topology(url: str, expected_topology: Path | None, timeout: float = 1.5) -> bool:
+    if expected_topology is None:
+        return _is_url_available(url, timeout=timeout)
+    board_topology = _get_board_topology(url, timeout=timeout)
+    if board_topology is None:
+        return False
+    return Path(board_topology).resolve() == expected_topology.resolve()
+
+
 def _ensure_board_server(
     host: str = "127.0.0.1",
     port: int = 8000,
@@ -159,7 +183,12 @@ def _ensure_board_server(
     wait_seconds: float = 30.0,
 ) -> dict[str, Any]:
     url = _build_board_url(host, port, path)
-    if _is_url_available(url):
+    try:
+        expected_topology = get_topology_path().resolve()
+    except (FileNotFoundError, RuntimeError, TopologyParseError):
+        expected_topology = None
+
+    if _is_board_serving_topology(url, expected_topology):
         return {
             "success": True,
             "url": url,
@@ -168,6 +197,7 @@ def _ensure_board_server(
             "path": path,
             "server_started": False,
             "reachable": True,
+            "topology": str(expected_topology) if expected_topology is not None else None,
         }
 
     command = [
@@ -180,11 +210,15 @@ def _ensure_board_server(
         "--port",
         str(port),
     ]
-    process = _spawn_detached_process(command, _REPO_ROOT)
+    env = os.environ.copy()
+    if expected_topology is not None:
+        env["TOPOLOGY_FILE"] = str(expected_topology)
+        env["ENSP_MCP_CALLER_CWD"] = str(expected_topology.parent)
+    process = _spawn_detached_process(command, _REPO_ROOT, env=env)
     deadline = time.time() + max(wait_seconds, 0.5)
 
     while time.time() < deadline:
-        if _is_url_available(url):
+        if _is_board_serving_topology(url, expected_topology):
             return {
                 "success": True,
                 "url": url,
@@ -194,12 +228,13 @@ def _ensure_board_server(
                 "server_started": True,
                 "reachable": True,
                 "pid": process.pid,
+                "topology": str(expected_topology) if expected_topology is not None else None,
             }
         if process.poll() is not None:
             break
         time.sleep(0.4)
 
-    return {
+    result = {
         "success": False,
         "url": url,
         "host": host,
@@ -211,6 +246,12 @@ def _ensure_board_server(
         "error": f"配置看板服务未能在 {wait_seconds:.1f} 秒内就绪",
         "command": command,
     }
+    if expected_topology is not None:
+        result["topology"] = str(expected_topology)
+    if _is_url_available(url):
+        result["error"] = "配置看板服务已启动，但当前返回的拓扑不是当前目录对应的结果"
+        result["reachable"] = True
+    return result
 
 
 def _resolve_editor_command(editor_command: str | None = None) -> list[str] | None:
@@ -2004,7 +2045,7 @@ def call_tool(name: str, arguments: Optional[dict[str, Any]] = None) -> dict[str
                     "success": False,
                     "error_code": "TOPOLOGY_UNAVAILABLE",
                     "error": str(e),
-                    "hint": "请在实验目录启动 MCP，或设置 TOPOLOGY_FILE 指向当前 .topo 文件。",
+                    "hint": "当前目录没有可验证的拓扑结果。请在当前目录放置 .topo 文件，或设置 TOPOLOGY_FILE 指向当前拓扑。",
                 }
         result = tool.handler(**args)
         if isinstance(result, dict):
@@ -2022,4 +2063,5 @@ def call_tool(name: str, arguments: Optional[dict[str, Any]] = None) -> dict[str
             "success": False,
             "error": f"宸ュ叿鎵ц寮傚父: {e}",
         }
+
 

@@ -205,3 +205,44 @@ def test_open_board_in_editor_falls_back_after_simple_browser_failure(monkeypatc
     assert result["success"] is True
     assert result["command"] == ["code.cmd", "--open-url", "http://127.0.0.1:8000/static/index.html"]
     assert calls[0][2].startswith("vscode://command/simpleBrowser.show?")
+
+
+def test_board_compatibility_requires_real_ensp_when_enabled(monkeypatch):
+    tools = _load_tools_module(monkeypatch)
+    monkeypatch.setattr(tools, "_get_board_topology", lambda url, timeout=1.5: "C:/labs/current.topo")
+    monkeypatch.setattr(tools, "_is_board_real_ensp_enabled", lambda url, timeout=1.5: False)
+
+    compatible = tools._is_board_compatible(
+        "http://127.0.0.1:8000/static/index.html",
+        tools.Path("C:/labs/current.topo"),
+        require_real_ensp=True,
+    )
+
+    assert compatible is False
+
+
+def test_ensure_board_server_uses_next_port_when_existing_board_is_mock(monkeypatch):
+    tools = _load_tools_module(monkeypatch)
+    monkeypatch.setenv("ENABLE_REAL_ENSP", "true")
+    monkeypatch.setattr(tools, "get_topology_path", lambda: tools.Path("C:/labs/current.topo"))
+
+    def fake_is_board_compatible(url, expected_topology, require_real_ensp, timeout=1.5):
+        return url.startswith("http://127.0.0.1:8001/")
+
+    monkeypatch.setattr(tools, "_is_board_compatible", fake_is_board_compatible)
+    monkeypatch.setattr(
+        tools,
+        "_is_url_available",
+        lambda url, timeout=1.5: url.startswith("http://127.0.0.1:8000/"),
+    )
+    monkeypatch.setattr(
+        tools,
+        "_spawn_detached_process",
+        lambda command, cwd, env=None: SimpleNamespace(pid=321, poll=lambda: None),
+    )
+
+    result = tools._ensure_board_server(wait_seconds=0.5)
+
+    assert result["success"] is True
+    assert result["port"] == 8001
+    assert result["url"] == "http://127.0.0.1:8001/static/index.html"

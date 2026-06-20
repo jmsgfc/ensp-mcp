@@ -167,6 +167,62 @@ def _get_board_topology(url: str, timeout: float = 1.5) -> str | None:
     return topology if isinstance(topology, str) and topology else None
 
 
+def _is_board_real_ensp_enabled(url: str, timeout: float = 1.5) -> bool | None:
+    parsed = urllib.parse.urlsplit(url)
+    health_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/api/health/ensp", "", ""))
+    try:
+        with urllib.request.urlopen(health_url, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    enabled = payload.get("enabled")
+    return enabled if isinstance(enabled, bool) else None
+
+
+def _is_board_compatible(
+    url: str,
+    expected_topology: Path | None,
+    *,
+    require_real_ensp: bool,
+    timeout: float = 1.5,
+) -> bool:
+    if expected_topology is None:
+        if not _is_url_available(url, timeout=timeout):
+            return False
+    else:
+        board_topology = _get_board_topology(url, timeout=timeout)
+        if board_topology is None:
+            return False
+        if Path(board_topology).resolve() != expected_topology.resolve():
+            return False
+
+    if require_real_ensp:
+        return _is_board_real_ensp_enabled(url, timeout=timeout) is True
+    return True
+
+
+def _find_relaunch_port(
+    host: str,
+    starting_port: int,
+    path: str,
+    expected_topology: Path | None,
+    *,
+    require_real_ensp: bool,
+    max_ports: int = 10,
+) -> int:
+    for candidate in range(starting_port, starting_port + max_ports):
+        candidate_url = _build_board_url(host, candidate, path)
+        if _is_board_compatible(
+            candidate_url,
+            expected_topology,
+            require_real_ensp=require_real_ensp,
+        ):
+            return candidate
+        if not _is_url_available(candidate_url):
+            return candidate
+    return starting_port
+
+
 def _is_board_serving_topology(url: str, expected_topology: Path | None, timeout: float = 1.5) -> bool:
     if expected_topology is None:
         return _is_url_available(url, timeout=timeout)
@@ -183,12 +239,17 @@ def _ensure_board_server(
     wait_seconds: float = 30.0,
 ) -> dict[str, Any]:
     url = _build_board_url(host, port, path)
+    require_real_ensp = _is_truthy(os.getenv("ENABLE_REAL_ENSP"))
     try:
         expected_topology = get_topology_path().resolve()
     except (FileNotFoundError, RuntimeError, TopologyParseError):
         expected_topology = None
 
-    if _is_board_serving_topology(url, expected_topology):
+    if _is_board_compatible(
+        url,
+        expected_topology,
+        require_real_ensp=require_real_ensp,
+    ):
         return {
             "success": True,
             "url": url,
@@ -200,6 +261,14 @@ def _ensure_board_server(
             "topology": str(expected_topology) if expected_topology is not None else None,
         }
 
+    launch_port = _find_relaunch_port(
+        host,
+        port,
+        path,
+        expected_topology,
+        require_real_ensp=require_real_ensp,
+    )
+    url = _build_board_url(host, launch_port, path)
     command = [
         sys.executable,
         "-m",
@@ -208,7 +277,7 @@ def _ensure_board_server(
         "--host",
         host,
         "--port",
-        str(port),
+        str(launch_port),
     ]
     env = os.environ.copy()
     if expected_topology is not None:
@@ -218,12 +287,16 @@ def _ensure_board_server(
     deadline = time.time() + max(wait_seconds, 0.5)
 
     while time.time() < deadline:
-        if _is_board_serving_topology(url, expected_topology):
+        if _is_board_compatible(
+            url,
+            expected_topology,
+            require_real_ensp=require_real_ensp,
+        ):
             return {
                 "success": True,
                 "url": url,
                 "host": host,
-                "port": port,
+                "port": launch_port,
                 "path": path,
                 "server_started": True,
                 "reachable": True,
@@ -238,7 +311,7 @@ def _ensure_board_server(
         "success": False,
         "url": url,
         "host": host,
-        "port": port,
+        "port": launch_port,
         "path": path,
         "server_started": True,
         "reachable": False,
@@ -249,7 +322,10 @@ def _ensure_board_server(
     if expected_topology is not None:
         result["topology"] = str(expected_topology)
     if _is_url_available(url):
-        result["error"] = "配置看板服务已启动，但当前返回的拓扑不是当前目录对应的结果"
+        if require_real_ensp:
+            result["error"] = "配置看板服务已启动，但当前服务不是当前目录对应的实时 eNSP 看板"
+        else:
+            result["error"] = "配置看板服务已启动，但当前返回的拓扑不是当前目录对应的结果"
         result["reachable"] = True
     return result
 

@@ -29,6 +29,7 @@ from backend.adapters.base_adapter import (
     DeviceDiagnostics,
     DeviceNotFoundError,
 )
+from backend.adapters.mock_adapter import MockAdapter
 from backend.services.device_service import DeviceService
 from backend.services.log_service import LogService, LogLevel, LogAction
 from backend.runtime.context import get_device_service, get_log_service
@@ -664,6 +665,11 @@ def run_command(device_id: str, req: CommandRequest):
 @app.get("/api/devices/{device_id}/current-config", response_model=DeviceCurrentConfigResponse)
 def get_device_current_config(device_id: str):
     """读取指定设备的当前配置，适合 HTML 看板轮询。"""
+    if isinstance(device_service.adapter, MockAdapter):
+        raise HTTPException(
+            status_code=409,
+            detail="MOCK_ADAPTER_ACTIVE: 当前连接的是 mock 适配器，暂无真实回显。",
+        )
     try:
         result = device_service.get_device_current_config(device_id)
         return DeviceCurrentConfigResponse(

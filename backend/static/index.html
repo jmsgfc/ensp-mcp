@@ -151,6 +151,36 @@
             font-size: 14px;
         }
 
+        .banner {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            padding: 12px 14px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.5;
+            background: rgba(255, 255, 255, 0.92);
+        }
+
+        .banner.show {
+            display: flex;
+        }
+
+        .banner.error {
+            color: #9d2d27;
+            border-color: #f0b7b1;
+            background: #fff3f1;
+        }
+
+        .banner.success {
+            color: #0c6a4a;
+            border-color: #b9ead7;
+            background: #effcf5;
+        }
+
         .layout {
             display: grid;
             grid-template-columns: 360px minmax(0, 1fr);
@@ -960,6 +990,8 @@
             </div>
         </header>
 
+        <div id="statusBanner" class="banner" role="status" aria-live="polite"></div>
+
         <div class="layout">
             <aside class="sidebar panel">
                 <div class="panel-head">
@@ -1107,6 +1139,7 @@
         };
 
         const refs = {
+            statusBanner: document.getElementById("statusBanner"),
             deviceCount: document.getElementById("deviceCount"),
             onlineCount: document.getElementById("onlineCount"),
             offlineCount: document.getElementById("offlineCount"),
@@ -1156,9 +1189,19 @@
         async function fetchJson(url) {
             const response = await fetch(url, { cache: "no-store" });
             if (!response.ok) {
-                throw new Error("HTTP " + response.status);
+                let detail = "";
+                try {
+                    const payload = await response.clone().json();
+                    detail = payload && (payload.detail || payload.error_code || payload.message) || "";
+                } catch (error) {}
+                throw new Error(detail ? ("HTTP " + response.status + ": " + detail) : ("HTTP " + response.status));
             }
             return response.json();
+        }
+
+        function isMockConfigText(config) {
+            if (!config) return false;
+            return String(config).includes("模拟设备已收到命令:");
         }
 
         function normalizeDevices(payload) {
@@ -1280,9 +1323,16 @@
         }
 
         function setBanner(kind, text) {
+            refs.statusBanner.className = "banner show " + (kind || "success");
+            refs.statusBanner.textContent = text || "";
             if (kind === "error") {
                 console.error(text);
             }
+        }
+
+        function clearBanner() {
+            refs.statusBanner.className = "banner";
+            refs.statusBanner.textContent = "";
         }
 
         function filteredDevices() {
@@ -1332,7 +1382,7 @@
         function renderCode(config) {
             const lines = splitLines(config);
             if (!lines.length) {
-                refs.configViewer.innerHTML = '<div class="empty">当前没有可显示的配置。</div>';
+                refs.configViewer.innerHTML = '<div class="empty">暂无回显</div>';
                 refs.codeFooter.textContent = "共 0 行配置";
                 return;
             }
@@ -1375,7 +1425,7 @@
                 renderCode("");
                 renderDiffList(refs.addedList, [], "added", "选择设备并刷新后开始记录变化。");
                 renderDiffList(refs.removedList, [], "removed", "选择设备并刷新后开始记录变化。");
-                setBanner("success", device ? "已选择 " + device.name + "，请刷新读取当前配置。" : "请选择一台设备读取当前配置。");
+                setBanner("success", device ? device.name + " 暂无回显。" : "当前暂无回显。");
                 return;
             }
 
@@ -1567,7 +1617,7 @@
                 renderDeviceList();
                 renderStage();
                 if (!state.snapshots[id]) {
-                    await refreshConfig(true);
+                    await fetchCurrentConfigForId(id, true);
                 }
             }
             renderTopology();
@@ -1581,35 +1631,69 @@
             renderStage();
             if (state.topology) renderTopology();
             if (!state.snapshots[id]) {
-                await refreshConfig(true);
+                await fetchCurrentConfigForId(id, true);
+            }
+        }
+
+        async function fetchCurrentConfigForId(deviceId, silent) {
+            const device = state.devices.find(item => item.id === deviceId);
+            if (!device) return false;
+            const requestUrl = "/api/devices/" + encodeURIComponent(device.id) + "/current-config";
+            const previous = state.snapshots[device.id];
+            refs.refreshBtn.disabled = true;
+            refs.refreshBtn.textContent = "↻ 刷新中";
+            if (!silent) setBanner("success", "正在读取 " + device.name + " 的当前配置...");
+
+            try {
+                const payload = await fetchJson(requestUrl);
+                const config = payload.config || "";
+                const mockDetected = isMockConfigText(config);
+                if (mockDetected) {
+                    state.snapshots[device.id] = {
+                        config: "",
+                        fetched_at: payload.fetched_at || new Date().toISOString(),
+                        diff: diffConfigs(previous ? previous.config : null, ""),
+                    };
+                    if (state.selectedId === device.id) {
+                        renderStage();
+                    }
+                    setBanner("error", device.name + " 当前连接的是 mock 看板，未显示假配置。");
+                    return false;
+                }
+                state.snapshots[device.id] = {
+                    config,
+                    fetched_at: payload.fetched_at || new Date().toISOString(),
+                    diff: diffConfigs(previous ? previous.config : null, config),
+                };
+                if (state.selectedId === device.id) {
+                    renderStage();
+                }
+                return true;
+            } catch (error) {
+                if (/MOCK_ADAPTER_ACTIVE/i.test(error.message)) {
+                    state.snapshots[device.id] = {
+                        config: "",
+                        fetched_at: new Date().toISOString(),
+                        diff: diffConfigs(previous ? previous.config : null, ""),
+                    };
+                    if (state.selectedId === device.id) {
+                        renderStage();
+                    }
+                    setBanner("error", device.name + " 当前连接的是 mock 看板，暂无真实回显。");
+                    return false;
+                }
+                setBanner("error", "读取配置失败：" + error.message);
+                return false;
+            } finally {
+                refs.refreshBtn.disabled = false;
+                refs.refreshBtn.textContent = "↻ 刷新配置";
             }
         }
 
         async function refreshConfig(silent) {
             const device = currentDevice();
             if (!device || state.refreshing) return;
-            state.refreshing = true;
-            refs.refreshBtn.disabled = true;
-            refs.refreshBtn.textContent = "↻ 刷新中";
-            if (!silent) setBanner("success", "正在读取 " + device.name + " 的当前配置...");
-
-            try {
-                const payload = await fetchJson("/api/devices/" + encodeURIComponent(device.id) + "/current-config");
-                const previous = state.snapshots[device.id];
-                const config = payload.config || "";
-                state.snapshots[device.id] = {
-                    config,
-                    fetched_at: payload.fetched_at || new Date().toISOString(),
-                    diff: diffConfigs(previous ? previous.config : null, config),
-                };
-                renderStage();
-            } catch (error) {
-                setBanner("error", "读取配置失败：" + error.message);
-            } finally {
-                state.refreshing = false;
-                refs.refreshBtn.disabled = false;
-                refs.refreshBtn.textContent = "↻ 刷新配置";
-            }
+            await fetchCurrentConfigForId(device.id, silent);
         }
 
         async function loadDevices(options = {}) {
@@ -1627,7 +1711,9 @@
                 renderDeviceList();
                 renderStage();
                 await loadTopology();
-                if (refreshSelectedConfig && state.selectedId) await refreshConfig(true);
+                if (refreshSelectedConfig && state.selectedId) {
+                    await fetchCurrentConfigForId(state.selectedId, true);
+                }
                 return true;
             } catch (error) {
                 setBanner("error", "设备列表加载失败：" + error.message);
@@ -1658,7 +1744,6 @@
 
         async function refreshAll(silent) {
             if (state.refreshing) return;
-            state.refreshing = true;
             refs.refreshBtn.disabled = true;
             refs.refreshBtn.textContent = "↻ 刷新中";
             if (!silent) setBanner("success", "正在刷新设备列表和当前配置...");
@@ -1669,7 +1754,6 @@
                     setBanner("success", "设备列表和当前配置已更新。");
                 }
             } finally {
-                state.refreshing = false;
                 refs.refreshBtn.disabled = false;
                 refs.refreshBtn.textContent = "↻ 刷新配置";
             }

@@ -150,3 +150,52 @@ def test_get_topology_path_raises_when_current_directory_has_no_topology(monkeyp
 
     with pytest.raises(FileNotFoundError):
         module.get_topology_path()
+
+
+def test_find_topology_files_scans_current_and_common_locations(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    desktop = home / "Desktop"
+    desktop.mkdir(parents=True)
+    docs = home / "Documents"
+    docs.mkdir()
+
+    current_dir = tmp_path / "lab"
+    current_dir.mkdir()
+    current_named = current_dir / "lab.topo"
+    current_named.write_text("topo", encoding="utf-8")
+    other_topo = desktop / "other.topo"
+    other_topo.write_text("topo", encoding="utf-8")
+
+    monkeypatch.delenv("TOPOLOGY_FILE", raising=False)
+    monkeypatch.delenv("ENSP_MCP_CALLER_CWD", raising=False)
+    monkeypatch.chdir(current_dir)
+    monkeypatch.setattr(topology_config.Path, "home", lambda: home)
+    module = _reload_config_module()
+
+    result = module.find_topology_files()
+
+    assert result["success"] is True
+    assert result["count"] == 2
+    assert result["active_topology"] == str(current_named.resolve())
+    assert result["candidates"][0]["path"] == str(current_named.resolve())
+    assert result["candidates"][0]["is_active"] is True
+    assert any(item["path"] == str(other_topo.resolve()) for item in result["candidates"])
+
+
+def test_find_topology_files_respects_search_dir_and_max_results(monkeypatch, tmp_path):
+    search_root = tmp_path / "search"
+    search_root.mkdir()
+    a = search_root / "a.topo"
+    b = search_root / "b.topo"
+    a.write_text("topo", encoding="utf-8")
+    b.write_text("topo", encoding="utf-8")
+
+    monkeypatch.delenv("TOPOLOGY_FILE", raising=False)
+    module = _reload_config_module()
+
+    result = module.find_topology_files(search_dir=str(search_root), max_results=1)
+
+    assert result["search_dir"] == str(search_root.resolve())
+    assert result["count"] == 1
+    assert result["truncated"] is True
+    assert result["roots"] == [{"source": "search_dir", "path": str(search_root.resolve())}]

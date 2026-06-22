@@ -15,6 +15,97 @@ LIST_DEVICES_INPUT: dict[str, Any] = {
     "required": [],
 }
 
+FIND_TOPOLOGY_FILES_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "search_dir": {
+            "type": "string",
+            "description": "可选，指定要递归扫描 .topo 文件的目录；不提供时扫描当前目录和常见位置",
+        },
+        "max_results": {
+            "type": "integer",
+            "description": "最多返回多少个候选 .topo 文件，默认 20",
+            "minimum": 1,
+        },
+    },
+    "required": [],
+}
+
+REGISTER_DEVICE_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "设备名称，如 R1、LSW1"},
+        "host": {"type": "string", "description": "Telnet 主机地址，默认 127.0.0.1"},
+        "port": {"type": "integer", "description": "Telnet 端口号"},
+        "device_type": {"type": "string", "description": "设备类型，如 router / switch / firewall", "default": "router"},
+        "vendor": {"type": "string", "description": "厂商名称", "default": "huawei"},
+        "model": {"type": "string", "description": "型号说明", "default": "manual"},
+        "username_env": {"type": "string", "description": "可选，用户名环境变量名"},
+        "password_env": {"type": "string", "description": "可选，密码环境变量名"},
+    },
+    "required": ["name", "host", "port"],
+}
+
+UNREGISTER_DEVICE_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "要移除的设备名称"},
+    },
+    "required": ["name"],
+}
+
+LIST_REGISTERED_DEVICES_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+}
+
+AUTO_DISCOVER_DEVICES_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "host": {"type": "string", "description": "要扫描的主机地址，默认 127.0.0.1"},
+        "start_port": {"type": "integer", "description": "起始端口，默认 2000"},
+        "end_port": {"type": "integer", "description": "结束端口，默认 2050"},
+    },
+    "required": [],
+}
+
+EXPORT_TOPOLOGY_SUMMARY_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "format": {
+            "type": "string",
+            "enum": ["json", "markdown"],
+            "description": "导出格式，默认 json",
+        },
+    },
+    "required": [],
+}
+
+EXPORT_VERIFICATION_REPORT_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "format": {
+            "type": "string",
+            "enum": ["json", "markdown"],
+            "description": "导出格式，默认 json",
+        },
+    },
+    "required": [],
+}
+
+EXPORT_REFERENCE_CAPABILITIES_INPUT: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "format": {
+            "type": "string",
+            "enum": ["json", "markdown"],
+            "description": "导出格式，默认 json",
+        },
+    },
+    "required": [],
+}
+
 ANALYZE_REFERENCE_CONFIGS_INPUT: dict[str, Any] = {
     "type": "object",
     "properties": {},

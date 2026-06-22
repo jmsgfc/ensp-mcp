@@ -51,6 +51,9 @@ def test_tools_import_and_list_tools_do_not_require_topology(monkeypatch):
 
     names = {tool["name"] for tool in tools.list_tools()}
 
+    assert "find_topology_files" in names
+    assert "register_device" in names
+    assert "auto_discover_devices" in names
     assert "list_devices" in names
     assert "open_config_board" in names
 
@@ -66,6 +69,46 @@ def test_topology_dependent_tool_returns_structured_topology_error(monkeypatch):
 
     assert result["success"] is False
     assert result["error_code"] == "TOPOLOGY_UNAVAILABLE"
+
+
+def test_find_topology_files_tool_is_topology_free(monkeypatch, tmp_path):
+    class MissingTopologyService:
+        def refresh_adapter(self):
+            raise FileNotFoundError("no topo")
+
+    topo_file = tmp_path / "demo.topo"
+    topo_file.write_text("topo", encoding="utf-8")
+    tools = _load_tools_module(monkeypatch, device_service=MissingTopologyService())
+
+    result = tools.call_tool(
+        "find_topology_files",
+        {"search_dir": str(tmp_path), "max_results": 5},
+    )
+
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["candidates"][0]["path"] == str(topo_file.resolve())
+
+
+def test_registered_fallback_tools_allow_manual_mode(monkeypatch):
+    calls = []
+
+    class ManualCapableService:
+        source_mode = "registered"
+
+        def refresh_adapter(self, allow_registered_fallback=False):
+            calls.append(allow_registered_fallback)
+
+        def list_devices(self):
+            return []
+
+    tools = _load_tools_module(monkeypatch, device_service=ManualCapableService())
+    monkeypatch.setattr(tools, "export_json_artifact", lambda filename, payload: f"C:/tmp/{filename}")
+
+    result = tools.call_tool("list_devices")
+
+    assert result["success"] is not False
+    assert calls == [True]
 
 
 def test_open_config_board_uses_editor_launcher(monkeypatch):
@@ -205,6 +248,21 @@ def test_open_board_in_editor_falls_back_after_simple_browser_failure(monkeypatc
     assert result["success"] is True
     assert result["command"] == ["code.cmd", "--open-url", "http://127.0.0.1:8000/static/index.html"]
     assert calls[0][2].startswith("vscode://command/simpleBrowser.show?")
+
+
+def test_export_topology_summary_writes_artifact(monkeypatch):
+    tools = _load_tools_module(monkeypatch)
+    monkeypatch.setattr(
+        tools,
+        "_build_topology_graph_payload",
+        lambda: {"topology": "C:/labs/demo.topo", "device_count": 1, "link_count": 0, "devices": [{"name": "R1", "type": "router", "model": "AR"}], "links": []},
+    )
+    monkeypatch.setattr(tools, "export_json_artifact", lambda filename, payload: f"C:/tmp/{filename}")
+
+    result = tools._handle_export_topology_summary("json")
+
+    assert result["success"] is True
+    assert result["path"] == "C:/tmp/current_topology.json"
 
 
 def test_board_compatibility_requires_real_ensp_when_enabled(monkeypatch):

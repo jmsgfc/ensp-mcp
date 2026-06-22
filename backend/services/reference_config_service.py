@@ -13,6 +13,7 @@ reference drafts for:
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,32 @@ def _config_dir_for_workspace(workspace_dir: Path) -> Path | None:
         if candidate.exists() and candidate.is_dir():
             return candidate
     return None
+
+
+def _topology_from_workspace_dir(workspace_dir: Path) -> Path:
+    named_topo = workspace_dir / f"{workspace_dir.name}.topo"
+    if named_topo.exists():
+        return named_topo.resolve()
+
+    topo_files = sorted(workspace_dir.glob("*.topo"))
+    if len(topo_files) == 1:
+        return topo_files[0].resolve()
+    if len(topo_files) > 1:
+        names = ", ".join(path.name for path in topo_files)
+        raise RuntimeError(
+            f"工作目录存在多个 .topo 文件，请设置 TOPOLOGY_FILE 明确指定: {workspace_dir}: {names}"
+        )
+    raise FileNotFoundError(f"工作目录中未找到 .topo 文件: {workspace_dir}")
+
+
+def _resolve_reference_topology_path() -> Path:
+    try:
+        return get_topology_path().resolve()
+    except (FileNotFoundError, RuntimeError):
+        workspace_env = os.getenv("ENSP_MCP_WORKSPACE_DIR")
+        if not workspace_env:
+            raise
+        return _topology_from_workspace_dir(Path(workspace_env).expanduser().resolve())
 
 
 def _load_cfg_texts(config_dir: Path) -> dict[str, str]:
@@ -453,7 +480,7 @@ def _build_capability_catalog(patterns: dict[str, Any], templates: dict[str, Any
         },
     }
 def analyze_reference_configs() -> dict[str, Any]:
-    topo_path = get_topology_path().resolve()
+    topo_path = _resolve_reference_topology_path()
     workspace_dir = topo_path.parent
     topo = parse_topology(topo_path)
     config_dir = _config_dir_for_workspace(workspace_dir)

@@ -78,6 +78,13 @@ def _runtime_devices(devices: dict[str, DeviceTopoInfo]) -> dict[str, RuntimeDev
     return runtime
 
 
+def _safe_topology_value() -> str | None:
+    try:
+        return str(get_topology_path())
+    except (FileNotFoundError, RuntimeError):
+        return None
+
+
 def _find_link_port(
     devices: dict[str, DeviceTopoInfo],
     links: list[LinkInfo],
@@ -576,7 +583,7 @@ def execute_campus_lab(
         overall = save_result.get("success", False)
     return {
         "success": overall,
-        "topology": str(get_topology_path()),
+        "topology": _safe_topology_value(),
         "plan": plan,
         "apply": apply_result,
         "verification": verification,

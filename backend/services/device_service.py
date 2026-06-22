@@ -36,8 +36,9 @@ from backend.adapters.mock_adapter import (
 )
 from backend.adapters.ensp_adapter import ENSPAdapter
 from backend.services.log_service import LogService
+from backend.services.manual_device_registry import has_registered_devices, list_registered_devices
 from backend.topology.config import get_devices_config_path, get_topology_path
-from backend.topology.parser import parse_topology
+from backend.topology.parser import TopologyParseError, parse_topology
 from backend.topology.validator import load_devices_yaml, validate_devices_yaml_against_topology
 from backend.utils.security import check_command
 
@@ -123,6 +124,26 @@ def _build_real_devices_config() -> list[dict]:
     return merged_devices
 
 
+def _build_registered_devices_config() -> list[dict]:
+    """Build device config from the manual registry side-route."""
+    devices = list_registered_devices()
+    normalized: list[dict] = []
+    for item in devices:
+        normalized.append({
+            "id": item["id"],
+            "name": item["name"],
+            "type": item.get("type", "router"),
+            "vendor": item.get("vendor", "huawei"),
+            "model": item.get("model", "manual"),
+            "host": item.get("host"),
+            "port": item.get("port"),
+            "protocol": item.get("protocol", "telnet"),
+            "username_env": item.get("username_env"),
+            "password_env": item.get("password_env"),
+        })
+    return normalized
+
+
 @dataclass
 class DeviceHealthCheck:
     """单台设备的健康检查结果。"""
@@ -170,7 +191,7 @@ def check_ensp_health() -> EnspHealthReport:
 
     只读检查，不尝试连接设备。
     """
-    enabled = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+    enabled = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
     issues: list[str] = []
 
     if not enabled:
@@ -222,15 +243,16 @@ def _create_adapter(log_service: LogService) -> BaseAdapter:
     只有当 ENABLE_REAL_ENSP=true 且 ENSP 连接逻辑已实现时，
     才会尝试使用 ENSPAdapter。
     """
-    enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+    devices_config = _build_real_devices_config()
+    return ENSPAdapter(devices_config=devices_config, enable_real=True)
 
-    if enable_real:
-        from backend.adapters.ensp_adapter import ENSPAdapter
-        devices_config = _build_real_devices_config()
-        return ENSPAdapter(devices_config=devices_config, enable_real=True)
 
-    devices = _build_device_list()
-    return MockAdapter(devices=devices)
+def _create_registered_adapter() -> BaseAdapter:
+    devices_config = _build_registered_devices_config()
+    return ENSPAdapter(
+        devices_config=devices_config,
+        enable_real=True,
+    )
 
 
 class DeviceService:
@@ -238,18 +260,42 @@ class DeviceService:
 
     def __init__(self, log_service: LogService):
         self._log_service = log_service
-        self._adapter = _create_adapter(log_service)
+        try:
+            self._adapter = _create_adapter(log_service)
+            self._source_mode = "topology"
+        except (FileNotFoundError, RuntimeError, TopologyParseError):
+            if has_registered_devices():
+                self._adapter = _create_registered_adapter()
+                self._source_mode = "registered"
+            else:
+                self._adapter = ENSPAdapter(devices_config=[], enable_real=True)
+                self._source_mode = "unresolved"
         self._dhcp_diag_cache: dict[tuple[str, str], tuple[float, DeviceDiagnostics]] = {}
         self._dhcp_diag_cache_lock = threading.Lock()
-        self._dhcp_diag_cache_source = self._build_dhcp_cache_source_key()
+        try:
+            self._dhcp_diag_cache_source = self._build_dhcp_cache_source_key()
+        except (FileNotFoundError, RuntimeError, TopologyParseError):
+            self._dhcp_diag_cache_source = ("<unresolved>", 0.0, "<unresolved>", 0.0)
 
     @property
     def adapter(self) -> BaseAdapter:
         return self._adapter
 
-    def refresh_adapter(self) -> None:
+    @property
+    def source_mode(self) -> str:
+        return self._source_mode
+
+    def refresh_adapter(self, allow_registered_fallback: bool = False) -> None:
         """Reload topology-backed device data for the current MCP call."""
-        self._adapter = _create_adapter(self._log_service)
+        try:
+            self._adapter = _create_adapter(self._log_service)
+            self._source_mode = "topology"
+        except (FileNotFoundError, RuntimeError, TopologyParseError):
+            if allow_registered_fallback and has_registered_devices():
+                self._adapter = _create_registered_adapter()
+                self._source_mode = "registered"
+            else:
+                raise
         self._sync_dhcp_cache_source()
 
     def invalidate_dhcp_cache(self) -> None:
@@ -258,6 +304,8 @@ class DeviceService:
             self._dhcp_diag_cache_source = self._build_dhcp_cache_source_key()
 
     def _build_dhcp_cache_source_key(self) -> tuple[str, float, str, float]:
+        if self._source_mode == "registered":
+            return ("<registered>", 0.0, "<registered>", 0.0)
         topo_path = get_topology_path().resolve()
         devices_path = get_devices_config_path().resolve()
         topo_mtime = topo_path.stat().st_mtime if topo_path.exists() else 0.0

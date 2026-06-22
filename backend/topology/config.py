@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -95,3 +96,91 @@ def get_backups_dir() -> Path:
     """Return the directory used for deployment backups."""
 
     return _PROJECT_ROOT / "backups"
+
+
+def _candidate_search_roots(search_dir: str | None = None) -> list[tuple[str, Path]]:
+    roots: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+
+    def add_root(label: str, path: Path | None) -> None:
+        if path is None:
+            return
+        resolved = path.expanduser().resolve()
+        if not resolved.exists() or not resolved.is_dir() or resolved in seen:
+            return
+        seen.add(resolved)
+        roots.append((label, resolved))
+
+    if search_dir:
+        add_root("search_dir", Path(search_dir))
+        return roots
+
+    add_root("caller_cwd", Path(os.getenv("ENSP_MCP_CALLER_CWD", "")) if os.getenv("ENSP_MCP_CALLER_CWD") else None)
+    add_root("process_cwd", Path.cwd())
+
+    home = Path.home()
+    add_root("desktop", home / "Desktop")
+    add_root("documents", home / "Documents")
+    add_root("downloads", home / "Downloads")
+
+    return roots
+
+
+def find_topology_files(
+    search_dir: str | None = None,
+    *,
+    max_results: int = 20,
+) -> dict[str, Any]:
+    """Find candidate .topo files for the user to choose from."""
+
+    if max_results < 1:
+        raise ValueError("max_results 必须大于等于 1")
+
+    roots = _candidate_search_roots(search_dir)
+    active_topology: Path | None
+    try:
+        active_topology = get_topology_path().resolve()
+    except (FileNotFoundError, RuntimeError):
+        active_topology = None
+
+    candidates: list[dict[str, Any]] = []
+    seen_files: set[Path] = set()
+
+    for source, root in roots:
+        for topo_path in root.rglob("*.topo"):
+            resolved = topo_path.resolve()
+            if resolved in seen_files:
+                continue
+            seen_files.add(resolved)
+            stat = resolved.stat()
+            candidates.append({
+                "path": str(resolved),
+                "name": resolved.name,
+                "directory": str(resolved.parent),
+                "source": source,
+                "modified_at": stat.st_mtime,
+                "is_named_after_directory": resolved.stem == resolved.parent.name,
+                "is_active": active_topology == resolved,
+            })
+
+    candidates.sort(
+        key=lambda item: (
+            not item["is_active"],
+            not item["is_named_after_directory"],
+            -item["modified_at"],
+            item["path"].lower(),
+        )
+    )
+    limited = candidates[:max_results]
+    for item in limited:
+        item["modified_at"] = int(item["modified_at"])
+
+    return {
+        "success": True,
+        "search_dir": str(Path(search_dir).expanduser().resolve()) if search_dir else None,
+        "roots": [{"source": source, "path": str(path)} for source, path in roots],
+        "count": len(limited),
+        "truncated": len(candidates) > len(limited),
+        "active_topology": str(active_topology) if active_topology is not None else None,
+        "candidates": limited,
+    }

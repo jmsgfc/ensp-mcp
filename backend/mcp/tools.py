@@ -34,6 +34,7 @@ from backend.adapters.base_adapter import (
 from backend.mcp.schemas import (
     ANALYZE_PC_CONNECTIVITY_INPUT,
     ANALYZE_REFERENCE_CONFIGS_INPUT,
+    AUTO_DISCOVER_DEVICES_INPUT,
     APPLY_DHCP_CONFIG_INPUT,
     APPLY_OSPF_CONFIG_INPUT,
     APPLY_PC_CONNECTIVITY_CONFIG_INPUT,
@@ -44,11 +45,16 @@ from backend.mcp.schemas import (
     CONNECT_DEVICES_INPUT,
     EXECUTE_TASK_INPUT,
     EXECUTE_NL_REQUEST_INPUT,
+    EXPORT_REFERENCE_CAPABILITIES_INPUT,
+    EXPORT_TOPOLOGY_SUMMARY_INPUT,
+    EXPORT_VERIFICATION_REPORT_INPUT,
     GET_DEVICE_STATUS_INPUT,
     GET_DHCP_FINAL_REPORT_INPUT,
     GET_FINAL_REPORT_INPUT,
     GET_TOPOLOGY_DIAGNOSTICS_INPUT,
+    FIND_TOPOLOGY_FILES_INPUT,
     LIST_DEVICES_INPUT,
+    LIST_REGISTERED_DEVICES_INPUT,
     OPEN_CONFIG_BOARD_INPUT,
     PLAN_NL_REQUEST_INPUT,
     PREVIEW_DHCP_CONFIG_INPUT,
@@ -57,19 +63,35 @@ from backend.mcp.schemas import (
     PREVIEW_ROLLBACK_INPUT,
     PREVIEW_SAVE_INPUT,
     PREVIEW_VLAN_CONFIG_INPUT,
+    REGISTER_DEVICE_INPUT,
     ROLLBACK_CONFIG_INPUT,
     RUN_COMMAND_INPUT,
     RUN_SHOW_COMMAND_INPUT,
     SAVE_CONFIG_INPUT,
+    UNREGISTER_DEVICE_INPUT,
     VERIFY_TASK_INPUT,
 )
+from backend.services.output_export_service import export_json_artifact, export_markdown_artifact
 from backend.services.campus_lab_service import execute_campus_lab
 from backend.services.reference_config_service import analyze_reference_configs
 from backend.services.device_service import DeviceService
-from backend.topology.config import get_topology_path
+from backend.services.manual_device_registry import (
+    auto_discover_devices,
+    list_registered_devices,
+    register_device,
+    unregister_device,
+)
+from backend.topology.config import find_topology_files, get_topology_path
+from backend.topology.interface_mapping import interface_name
+from backend.topology.parser import parse_topology
 from backend.topology.parser import TopologyParseError
 
 COMPACT_TOOL_NAMES = (
+    "find_topology_files",
+    "register_device",
+    "unregister_device",
+    "list_registered_devices",
+    "auto_discover_devices",
     "list_devices",
     "analyze_reference_configs",
     "open_config_board",
@@ -80,7 +102,18 @@ COMPACT_TOOL_NAMES = (
     "execute_campus_lab",
     "save_config",
     "rollback_config",
+    "export_topology_summary",
+    "export_verification_report",
+    "export_reference_capabilities",
 )
+
+_REGISTERED_FALLBACK_TOOLS = {
+    "list_devices",
+    "get_device_status",
+    "run_show_command",
+    "run_command",
+    "connect_devices",
+}
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _AUTO_BOARD_OPEN_ATTEMPTED = False
@@ -462,15 +495,154 @@ def _open_board_in_editor(url: str, editor_command: str | None = None) -> dict[s
 def _handle_list_devices(device_service: DeviceService) -> dict[str, Any]:
     """鍒楀嚭鎵€鏈夎澶囥€?"""
     devices = device_service.list_devices()
-    return {
+    result = {
+        "success": True,
         "devices": [_dc_to_dict(d) for d in devices],
         "count": len(devices),
+        "source_mode": getattr(device_service, "source_mode", "topology"),
     }
+    result["artifact_path"] = export_json_artifact("current_devices.json", result)
+    return result
+
+
+def _handle_find_topology_files(
+    search_dir: str | None = None,
+    max_results: int = 20,
+) -> dict[str, Any]:
+    return find_topology_files(search_dir=search_dir, max_results=max_results)
+
+
+def _handle_register_device(
+    name: str,
+    host: str,
+    port: int,
+    device_type: str = "router",
+    vendor: str = "huawei",
+    model: str = "manual",
+    username_env: str | None = None,
+    password_env: str | None = None,
+) -> dict[str, Any]:
+    return register_device(
+        name=name,
+        host=host,
+        port=port,
+        device_type=device_type,
+        vendor=vendor,
+        model=model,
+        username_env=username_env,
+        password_env=password_env,
+    )
+
+
+def _handle_unregister_device(name: str) -> dict[str, Any]:
+    return unregister_device(name)
+
+
+def _handle_list_registered_devices() -> dict[str, Any]:
+    devices = list_registered_devices()
+    return {"success": True, "count": len(devices), "devices": devices}
+
+
+def _handle_auto_discover_devices(
+    host: str = "127.0.0.1",
+    start_port: int = 2000,
+    end_port: int = 2050,
+) -> dict[str, Any]:
+    return auto_discover_devices(host=host, start_port=start_port, end_port=end_port)
 
 
 def _handle_analyze_reference_configs() -> dict[str, Any]:
     """Analyze sibling reference configs near the active topology."""
-    return analyze_reference_configs()
+    result = analyze_reference_configs()
+    if result.get("success"):
+        result["artifact_path"] = export_json_artifact("reference_capabilities.json", result)
+    return result
+
+
+def _build_topology_graph_payload() -> dict[str, Any]:
+    topo = parse_topology(get_topology_path())
+    devices_by_id = {device.id: device for device in topo.devices}
+    devices = [
+        {
+            "id": device.id,
+            "name": device.name,
+            "type": device.device_type,
+            "model": device.model,
+            "vendor": device.vendor,
+            "x": device.cx,
+            "y": device.cy,
+            "host": "127.0.0.1" if device.com_port else None,
+            "port": device.com_port or None,
+            "protocol": "telnet" if device.com_port else None,
+        }
+        for device in topo.devices
+    ]
+    links = []
+    for index, link in enumerate(topo.links):
+        source = devices_by_id.get(link.src_device_id)
+        target = devices_by_id.get(link.dest_device_id)
+        if source is None or target is None:
+            continue
+        links.append({
+            "id": f"link-{index + 1}",
+            "source": source.id,
+            "target": target.id,
+            "source_name": source.name,
+            "target_name": target.name,
+            "source_interface": interface_name(source, link.src_index),
+            "target_interface": interface_name(target, link.tar_index),
+            "line_name": link.line_name,
+        })
+    return {
+        "topology": str(get_topology_path()),
+        "device_count": len(devices),
+        "link_count": len(links),
+        "devices": devices,
+        "links": links,
+    }
+
+
+def _handle_export_topology_summary(format: str = "json") -> dict[str, Any]:
+    payload = _build_topology_graph_payload()
+    if format == "markdown":
+        lines = [
+            "# Topology Summary",
+            "",
+            f"- Topology: `{payload['topology']}`",
+            f"- Devices: {payload['device_count']}",
+            f"- Links: {payload['link_count']}",
+            "",
+            "## Devices",
+            "",
+        ]
+        for device in payload["devices"]:
+            lines.append(f"- {device['name']} ({device['type']}, {device['model']})")
+        path = export_markdown_artifact("current_topology.md", "\n".join(lines))
+    else:
+        path = export_json_artifact("current_topology.json", payload)
+    return {"success": True, "format": format, "path": path, "summary": payload}
+
+
+def _handle_export_reference_capabilities(format: str = "json") -> dict[str, Any]:
+    payload = analyze_reference_configs()
+    if not payload.get("success"):
+        return payload
+    if format == "markdown":
+        lines = [
+            "# Reference Capabilities",
+            "",
+            f"- Workspace: `{payload['workspace_dir']}`",
+            f"- Config Dir: `{payload['config_dir']}`",
+            "",
+            "## Templates",
+            "",
+        ]
+        for name, template_type in payload.get("template_summary", {}).items():
+            lines.append(f"- {name}: `{template_type}`")
+        path = export_markdown_artifact("reference_capabilities.md", "\n".join(lines))
+    else:
+        path = export_json_artifact("reference_capabilities.json", payload)
+    return {"success": True, "format": format, "path": path}
 
 def _handle_open_config_board(
     open_mode: str = "browser",
@@ -715,7 +887,7 @@ def _handle_get_final_report(
                 next_steps.append(f"补齐缺口：{'; '.join(connectivity.gaps[:3])}")
             next_steps.append("重新执行配置下发并验证")
 
-        return {
+        result = {
             "success": True,
             "final_status": final_status,
             "summary": summary,
@@ -727,9 +899,38 @@ def _handle_get_final_report(
             "health": _dc_to_dict(health),
             "generated_at": datetime.now().isoformat(),
         }
+        result["artifact_path"] = export_json_artifact("last_verification_report.json", result)
+        return result
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def _handle_export_verification_report(
+    device_service: DeviceService,
+    format: str = "json",
+) -> dict[str, Any]:
+    payload = _handle_get_final_report(device_service)
+    if not payload.get("success") and payload.get("final_status") is None:
+        return payload
+    if format == "markdown":
+        lines = [
+            "# Verification Report",
+            "",
+            f"- Final Status: `{payload.get('final_status')}`",
+            f"- Summary: {payload.get('summary', '')}",
+            f"- Save Status: {payload.get('save_status', '')}",
+            f"- Rollback Status: {payload.get('rollback_status', '')}",
+            "",
+            "## Next Steps",
+            "",
+        ]
+        for step in payload.get("next_steps", []):
+            lines.append(f"- {step}")
+        path = export_markdown_artifact("last_verification_report.md", "\n".join(lines))
+    else:
+        path = export_json_artifact("last_verification_report.json", payload)
+    return {"success": True, "format": format, "path": path}
 
 
 # --- 绗簩鎵癸細鍙楁帶鍐欐搷浣?handler ---
@@ -782,7 +983,7 @@ def _handle_apply_pc_connectivity_config(
         )
 
         # 妫€鏌?ENABLE_REAL_ENSP锛堟湭鍚敤 鈫?鎷掔粷锛屼笉鍐欑紦瀛橈級
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return {
                 "success": False,
@@ -920,7 +1121,7 @@ def _handle_apply_save(
         )
 
         # 妫€鏌?ENABLE_REAL_ENSP锛堟湭鍚敤 鈫?鎷掔粷锛屼笉鍐欑紦瀛橈級
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return {
                 "success": False,
@@ -999,7 +1200,7 @@ def _handle_apply_rollback(
         )
 
         # 妫€鏌?ENABLE_REAL_ENSP锛堟湭鍚敤 鈫?鎷掔粷锛屼笉鍐欑紦瀛橈級
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return {
                 "success": False,
@@ -1092,7 +1293,7 @@ def _handle_apply_ospf_config(
         )
 
         # 妫€鏌?ENABLE_REAL_ENSP
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return {
                 "success": False,
@@ -1212,7 +1413,7 @@ def _handle_apply_vlan_config(
         )
 
         # 妫€鏌?ENABLE_REAL_ENSP
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return {
                 "success": False,
@@ -1331,7 +1532,7 @@ def _handle_apply_dhcp_config(
         )
 
         # 妫€鏌?ENABLE_REAL_ENSP
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return {
                 "success": False,
@@ -1816,6 +2017,52 @@ def _build_registry(device_service: DeviceService) -> dict[str, ToolDef]:
     """Build the MCP tool registry."""
     registry: dict[str, ToolDef] = {}
 
+    registry["find_topology_files"] = ToolDef(
+        name="find_topology_files",
+        description="Find candidate .topo files from the current directory or common locations.",
+        input_schema=FIND_TOPOLOGY_FILES_INPUT,
+        handler=lambda search_dir=None, max_results=20: _handle_find_topology_files(
+            search_dir=search_dir,
+            max_results=max_results,
+        ),
+    )
+    registry["register_device"] = ToolDef(
+        name="register_device",
+        description="Register a manual Telnet device for non-topology workflows.",
+        input_schema=REGISTER_DEVICE_INPUT,
+        handler=lambda name, host, port, device_type="router", vendor="huawei", model="manual", username_env=None, password_env=None: _handle_register_device(
+            name=name,
+            host=host,
+            port=port,
+            device_type=device_type,
+            vendor=vendor,
+            model=model,
+            username_env=username_env,
+            password_env=password_env,
+        ),
+    )
+    registry["unregister_device"] = ToolDef(
+        name="unregister_device",
+        description="Remove a manual device registration.",
+        input_schema=UNREGISTER_DEVICE_INPUT,
+        handler=lambda name: _handle_unregister_device(name),
+    )
+    registry["list_registered_devices"] = ToolDef(
+        name="list_registered_devices",
+        description="List manually registered or auto-discovered devices.",
+        input_schema=LIST_REGISTERED_DEVICES_INPUT,
+        handler=lambda: _handle_list_registered_devices(),
+    )
+    registry["auto_discover_devices"] = ToolDef(
+        name="auto_discover_devices",
+        description="Scan common eNSP Telnet ports and add discovered devices to the manual registry.",
+        input_schema=AUTO_DISCOVER_DEVICES_INPUT,
+        handler=lambda host="127.0.0.1", start_port=2000, end_port=2050: _handle_auto_discover_devices(
+            host=host,
+            start_port=start_port,
+            end_port=end_port,
+        ),
+    )
     registry["list_devices"] = ToolDef(
         name="list_devices",
         description="List devices from the current topology inventory.",
@@ -1918,6 +2165,24 @@ def _build_registry(device_service: DeviceService) -> dict[str, ToolDef]:
         description="Get the final PC connectivity report.",
         input_schema=GET_FINAL_REPORT_INPUT,
         handler=lambda: _handle_get_final_report(device_service),
+    )
+    registry["export_topology_summary"] = ToolDef(
+        name="export_topology_summary",
+        description="Export the current topology summary to a stable JSON or Markdown artifact.",
+        input_schema=EXPORT_TOPOLOGY_SUMMARY_INPUT,
+        handler=lambda format="json": _handle_export_topology_summary(format),
+    )
+    registry["export_verification_report"] = ToolDef(
+        name="export_verification_report",
+        description="Export the latest verification report to a stable JSON or Markdown artifact.",
+        input_schema=EXPORT_VERIFICATION_REPORT_INPUT,
+        handler=lambda format="json": _handle_export_verification_report(device_service, format),
+    )
+    registry["export_reference_capabilities"] = ToolDef(
+        name="export_reference_capabilities",
+        description="Export reference capability analysis to a stable JSON or Markdown artifact.",
+        input_schema=EXPORT_REFERENCE_CAPABILITIES_INPUT,
+        handler=lambda format="json": _handle_export_reference_capabilities(format),
     )
     registry["preview_pc_connectivity_config"] = ToolDef(
         name="preview_pc_connectivity_config",
@@ -2024,7 +2289,14 @@ class _LazyDeviceService:
         return getattr(_get_ds(), name)
 
 
-_TOPOLOGY_FREE_TOOLS = {"open_config_board"}
+_TOPOLOGY_FREE_TOOLS = {
+    "open_config_board",
+    "find_topology_files",
+    "register_device",
+    "unregister_device",
+    "list_registered_devices",
+    "auto_discover_devices",
+}
 _device_service = _LazyDeviceService()
 TOOL_REGISTRY = _build_registry(_device_service)
 
@@ -2115,7 +2387,12 @@ def call_tool(name: str, arguments: Optional[dict[str, Any]] = None) -> dict[str
     try:
         if name not in _TOPOLOGY_FREE_TOOLS:
             try:
-                _device_service.refresh_adapter()
+                try:
+                    _device_service.refresh_adapter(
+                        allow_registered_fallback=name in _REGISTERED_FALLBACK_TOOLS,
+                    )
+                except TypeError:
+                    _device_service.refresh_adapter()
             except (FileNotFoundError, RuntimeError, TopologyParseError) as e:
                 return {
                     "success": False,

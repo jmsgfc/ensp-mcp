@@ -6,7 +6,7 @@
 - POST /api/devices/{device_id}/commands/run  执行只读命令
 - GET  /api/logs                       查询操作日志
 
-当前默认使用 MockAdapter，不连接真实 eNSP。
+当前默认面向真实 eNSP，不再把 Mock 模式作为常规启动路径。
 """
 
 import dataclasses
@@ -32,6 +32,7 @@ from backend.adapters.base_adapter import (
 from backend.adapters.mock_adapter import MockAdapter
 from backend.services.device_service import DeviceService
 from backend.services.log_service import LogService, LogLevel, LogAction
+from backend.services.output_export_service import export_json_artifact
 from backend.runtime.context import get_device_service, get_log_service
 from backend.topology.config import get_topology_path
 from backend.topology.interface_mapping import interface_name
@@ -114,13 +115,15 @@ def topology_graph():
             "line_name": link.line_name,
         })
 
-    return {
+    payload = {
         "topology": str(get_topology_path()),
         "device_count": len(devices),
         "link_count": len(links),
         "devices": devices,
         "links": links,
     }
+    export_json_artifact("current_topology.json", payload)
+    return payload
 
 
 class CommandRequest(BaseModel):
@@ -599,7 +602,7 @@ class NlPlanResponseModel(BaseModel):
 def list_devices():
     """获取所有设备列表。"""
     devices = device_service.list_devices()
-    return [
+    payload = [
         DeviceInfoResponse(
             id=d.id,
             name=d.name,
@@ -612,6 +615,11 @@ def list_devices():
         )
         for d in devices
     ]
+    export_json_artifact(
+        "current_devices.json",
+        [item.model_dump() for item in payload],
+    )
+    return payload
 
 
 @app.get("/api/devices/{device_id}/status", response_model=DeviceStatusResponse)
@@ -826,7 +834,7 @@ def config_apply(req: ConfigApplyRequest):
 
         # 检查 ENABLE_REAL_ENSP
         import os
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return ConfigDeployResultResponse(
                 draft_id="",
@@ -1053,7 +1061,7 @@ def ospf_config_apply(req: ConfigApplyRequest):
 
         # 检查 ENABLE_REAL_ENSP
         import os
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return ConfigDeployResultResponse(
                 draft_id="",
@@ -1263,7 +1271,7 @@ def vlan_config_apply(req: ConfigApplyRequest):
 
         # 检查 ENABLE_REAL_ENSP
         import os
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return ConfigDeployResultResponse(
                 draft_id="",
@@ -1484,7 +1492,7 @@ def dhcp_config_apply(req: ConfigApplyRequest):
 
         # 检查 ENABLE_REAL_ENSP
         import os
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return ConfigDeployResultResponse(
                 draft_id="",
@@ -1620,7 +1628,7 @@ def save_apply(req: SaveApplyRequest):
         )
 
         # 检查 ENABLE_REAL_ENSP（未启用 → 拒绝，不写缓存）
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return SaveAllResultResponse(
                 success=False,
@@ -1723,7 +1731,7 @@ def rollback_apply(req: RollbackApplyRequest):
         )
 
         # 检查 ENABLE_REAL_ENSP（未启用 → 拒绝，不写缓存）
-        enable_real = os.getenv("ENABLE_REAL_ENSP", "false").lower() == "true"
+        enable_real = os.getenv("ENABLE_REAL_ENSP", "true").lower() == "true"
         if not enable_real:
             return RollbackResultResponse(
                 success=False,
@@ -1919,7 +1927,7 @@ def final_report():
                 next_steps.append(f"补齐缺口：{'; '.join(connectivity.gaps[:3])}")
             next_steps.append("重新执行配置下发并验证")
 
-        return FinalReportResponse(
+        response = FinalReportResponse(
             health=EnspHealthReportResponse(
                 enabled=health.enabled,
                 devices=[
@@ -1961,6 +1969,8 @@ def final_report():
             next_steps=next_steps,
             generated_at=datetime.now().isoformat(),
         )
+        export_json_artifact("last_verification_report.json", response.model_dump())
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成最终验证报告失败: {e}")
 
